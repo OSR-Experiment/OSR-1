@@ -1,5 +1,5 @@
 # Builds the OSR-1 firmware (.fwsc, installable on an FM-1) on GitHub's machines, which can reach JieLi's
-# toolchain server. Also runs the host simulator's tests and builds the browser version.
+# toolchain server. Also runs the host simulator's tests.
 # Result: Actions tab > the run > "Artifacts" > osr1-firmware.
 name: Build firmware
 on:
@@ -25,10 +25,28 @@ jobs:
           python3 fm1-base/tools/build.py . --host
           build/host/osr1_host tests/basic.txt build/host
 
-      - name: JieLi toolchain and AC79 SDK
+      - name: JieLi toolchain
+        run: fm1-base/tools/get_toolchain.sh "$HOME/.jieli"
+
+      - name: AC79 SDK (the three files the package needs)
         run: |
-          fm1-base/tools/get_toolchain.sh "$HOME/.jieli"
-          fm1-base/bsp/tools/get_sdk.sh "$HOME/.jieli/ac79-sdk"
+          set -x
+          SDK="$HOME/.jieli/ac79-sdk"
+          TAG=AC79NN_SDK_V1.2.1_2023-12-13
+          # 1. felucca-bsp's script (GitHub mirror, pinned revision)
+          if fm1-base/bsp/tools/get_sdk.sh "$SDK"; then exit 0; fi
+          rm -rf "$SDK"
+          # 2. JieLi's own repository on Gitee, the tag, only the tools folder
+          if git clone --depth 1 --branch "$TAG" --filter=blob:none --sparse https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$SDK" \
+             && git -C "$SDK" sparse-checkout set cpu/wl82/tools; then :; else
+            rm -rf "$SDK"
+            # 3. the whole tag, shallow
+            git clone --depth 1 --branch "$TAG" https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$SDK"
+          fi
+          cd "$SDK"
+          echo "4e3b4c220dc96641cb5a723f41e68ce41d5261ae9434bb33fbd7f2c59976ded4  cpu/wl82/tools/uboot.boot" | sha256sum -c -
+          echo "276579954f076886a6a7694f65dc71c034a63a2c204b76749065c0ac7b010d1b  cpu/wl82/tools/cfg_tool.bin" | sha256sum -c -
+          echo "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d  cpu/wl82/tools/cfg/eq_cfg_hw.bin" | sha256sum -c -
 
       - name: Firmware
         run: |
@@ -36,9 +54,12 @@ jobs:
           python3 fm1-base/tools/build.py .
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: osr1-firmware
           path: |
             build/*.fwsc
+            build/*.bin
             build/host/*.png
             build/host/*.wav
+          if-no-files-found: warn
