@@ -54,9 +54,14 @@ En local (Linux x86-64) :
 
 ## Charge processeur
 
-Mesurée sur un PC : 151 à 229 ns par échantillon selon le moteur (la FM est la plus lourde). La puce du FM-1 tourne
-vers 360 MHz, soit environ 8 000 cycles par échantillon. Estimation prudente : 25 à 75 % d'un cœur. À mesurer sur
-la machine (`plat_cpu_pct`). Si ça ne suffit pas : passer le moteur en RAM, ou partager les voix avec le second cœur.
+Firmware réel (`OSR-1.fwsc`) lancé dans l'émulateur de la puce [fm1-emu](https://github.com/joakimeriksson/fm1-emu)
+(horloge émulée à 240 MHz) : **18 à 19 % du temps dans l'interruption audio**, accord tenu (son SIROP), kick et
+sidechain compris. Le vrai FM-1 tourne vers 360 MHz. Il reste donc beaucoup de marge (reverb plus riche, plus de voix).
+À confirmer sur la machine (`plat_cpu_pct`).
+
+## Télécharger
+
+La dernière version compilée est sur la page **Releases** du dépôt (`OSR-1.fwsc`, pas encore testée sur un vrai FM-1).
 
 ## Licence
 
