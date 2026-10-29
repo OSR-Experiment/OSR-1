@@ -4,7 +4,11 @@
 name: Build firmware
 on:
   push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -59,6 +63,22 @@ jobs:
             echo "::error title=build (tail)::$(tail -40 build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
             exit 1
           fi
+          echo "::notice title=build (summary)::$(tail -30 build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+
+      - name: Publish the firmware (Releases page and the builds branch)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          F=$(ls build/*.fwsc | head -1)
+          cp "$F" OSR-1.fwsc
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest OSR-1.fwsc --prerelease --title "OSR-1 - derniere version (non testee sur un FM-1)" \
+            --notes "Compile automatiquement depuis ${GITHUB_SHA::7}. Pas encore teste sur un vrai FM-1 : a essayer d'abord dans un emulateur."
+          mkdir out && cp OSR-1.fwsc out/ && cd out
+          echo "$GITHUB_SHA" > COMMIT
+          git init -q -b builds && git add . 
+          git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "build ${GITHUB_SHA::7}"
+          git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" builds
 
       - uses: actions/upload-artifact@v4
         if: always()
