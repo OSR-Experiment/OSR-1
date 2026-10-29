@@ -564,7 +564,7 @@ static void draw_trails(void)            /* 72..176: the voices gliding */
         if (!active) c = COL_DIMLINE;
         for (j = 0; j < TRAIL_N; j++) {
             float m = trail[i][(trail_pos + j) % TRAIL_N];
-            int32_t x = 12 + j * 216 / (TRAIL_N - 1), y = 96 - (int32_t)((m - 30.0f) * 88.0f / 56.0f);
+            int32_t x = 12 + j * 216 / (TRAIL_N - 1), y = 98 - (int32_t)((m - 32.0f) * 94.0f / 50.0f);   /* bass .. top voice */
             y = clamp(y, 2, 101);
             if (j) {
                 cv_line(px, py, x, y, c);
