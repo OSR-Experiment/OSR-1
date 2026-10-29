@@ -95,17 +95,17 @@ h1 span{color:var(--accent)}
     <div class="top">
       <div class="bezel"><canvas id="screen" width="240" height="240" aria-label="Écran du firmware"></canvas></div>
       <div class="controls">
-        <div class="group"><h2>Molettes · tenir SHIFT pour la 2e fonction</h2><div class="knobs" id="knobs"></div></div>
+        <div class="group"><h2>Molettes · une fonction chacune</h2><div class="knobs" id="knobs"></div></div>
         <label class="master" for="master">VOLUME <input id="master" type="range" min="0" max="4096" value="2800"></label>
       </div>
     </div>
-    <div class="group"><h2>Boutons</h2><div class="buttons" id="buttons"></div></div>
+    <div class="group"><h2>Boutons · une action chacun</h2><div class="buttons" id="buttons"></div></div>
     <div class="group"><h2>Clavier · 27 touches</h2><div class="keysWrap"><div class="keys" id="keys"></div></div></div>
   </section>
 
   <section class="notes">
-    <div><h2>Jouer</h2><p>Les 13 touches crème (Do à Do) jouent la grille. La touche VAR (Si grave) ou le bouton VARIATION donne la version alternative. Clavier ordi&nbsp;: rangée <kbd data-code="KeyA">A</kbd> à <kbd data-code="KeyK">K</kbd>, <kbd>Espace</kbd> variation.</p></div>
-    <div><h2>Molettes</h2><p>Glisser vers le haut ou le bas, ou la molette de la souris. Tenir SHIFT (ou <kbd>Maj</kbd>) donne la fonction du dessous&nbsp;: tonalité, richesse, famille, glide, voicing, BPM.</p></div>
+    <div><h2>Jouer</h2><p>Les 27 touches jouent la grille&nbsp;: même nom de note, même accord, une octave plus bas sous le Do4 et plus haut au-dessus du Do5. Touches blanches = accords sûrs, noires = épices. Clavier ordi&nbsp;: rangée <kbd data-code="KeyA">A</kbd> à <kbd data-code="KeyK">K</kbd>, <kbd>Espace</kbd> variation.</p></div>
+    <div><h2>Molettes</h2><p>Glisser vers le haut ou le bas, ou la molette de la souris. Un geste rapide va plus loin. Les réglages se sauvent tout seuls quelques secondes après le dernier changement.</p></div>
     <div><h2>Raccourcis</h2><p><kbd data-code="KeyB">B</kbd>/<kbd data-code="KeyN">N</kbd> grille, <kbd data-code="KeyZ">Z</kbd>/<kbd data-code="KeyX">X</kbd> son, <kbd data-code="KeyC">C</kbd>/<kbd data-code="KeyV">V</kbd> rythme, <kbd data-code="KeyR">R</kbd> rythme on/off, <kbd data-code="KeyO">O</kbd> kick, <kbd data-code="KeyP">P</kbd> sidechain, <kbd data-code="KeyQ">Q</kbd> basse, <kbd data-code="KeyL">L</kbd> latch.</p></div>
   </section>
 </main>
@@ -117,21 +117,21 @@ const $ = (id) => document.getElementById(id);
 
 /* the firmware's controls (plat.h order) and what OSR-1 does with them */
 const ENC = [
-  {role:2, dev:'PRESET', fn:'Grille', alt:'Tonalité'},
-  {role:1, dev:'ALGO', fn:'Rythme', alt:'Richesse'},
-  {role:0, dev:'SELECT', fn:'Son', alt:'Famille'},
-  {role:3, dev:'K1', fn:'Cutoff', alt:'Glide'},
-  {role:4, dev:'K2', fn:'Résonance', alt:'Voicing'},
-  {role:5, dev:'K3', fn:'Reverb', alt:'—'},
-  {role:6, dev:'K4', fn:'Delay', alt:'BPM'},
+  {role:2, dev:'PRESET', fn:'Grille'},
+  {role:1, dev:'ALGO', fn:'Rythme'},
+  {role:0, dev:'SELECT', fn:'Son'},
+  {role:3, dev:'K1', fn:'Cutoff'},
+  {role:4, dev:'K2', fn:'Glide'},
+  {role:5, dev:'K3', fn:'Reverb'},
+  {role:6, dev:'K4', fn:'BPM'},
 ];
 const B = {FX:0, SEL:1, ENV:2, LFO:3, EDIT:4, GLO:5, HOME:6, SAVE:7, ARP:8, SEQ:9, PLAY:10, REC:11, OCTDN:12, OCTUP:13};
 const BTN = [
-  {b:B.SEL, dev:'SEL', fn:'SHIFT'}, {b:B.ENV, dev:'ENV', fn:'VARIATION'}, {b:B.SEQ, dev:'SEQ', fn:'RYTHME'},
-  {b:B.FX, dev:'FX', fn:'KICK'}, {b:B.LFO, dev:'LFO', fn:'SIDE'}, {b:B.ARP, dev:'ARP', fn:'BASSE'},
-  {b:B.PLAY, dev:'PLAY', fn:'LATCH'}, {b:B.OCTDN, dev:'OCT-', fn:'OCTAVE -'}, {b:B.OCTUP, dev:'OCT+', fn:'OCTAVE +'},
-  {b:B.SAVE, dev:'SAVE', fn:'SAUVER'}, {b:B.EDIT, dev:'EDIT', fn:'libre', free:true}, {b:B.GLO, dev:'GLO', fn:'libre', free:true},
-  {b:B.HOME, dev:'HOME', fn:'libre', free:true}, {b:B.REC, dev:'REC', fn:'libre', free:true},
+  {b:B.ENV, dev:'ENV', fn:'VARIATION'}, {b:B.SEQ, dev:'SEQ', fn:'RYTHME'}, {b:B.FX, dev:'FX', fn:'KICK'},
+  {b:B.LFO, dev:'LFO', fn:'SIDE'}, {b:B.ARP, dev:'ARP', fn:'BASSE'}, {b:B.SAVE, dev:'SAVE', fn:'DELAY'},
+  {b:B.PLAY, dev:'PLAY', fn:'LATCH'}, {b:B.SEL, dev:'SEL', fn:'RICHESSE'}, {b:B.EDIT, dev:'EDIT', fn:'VOICING'},
+  {b:B.GLO, dev:'GLO', fn:'TONALITÉ -'}, {b:B.HOME, dev:'HOME', fn:'TONALITÉ +'}, {b:B.OCTDN, dev:'OCT-', fn:'OCTAVE -'},
+  {b:B.OCTUP, dev:'OCT+', fn:'OCTAVE +'}, {b:B.REC, dev:'REC', fn:'libre', free:true},
 ];
 /* 27 keys F3..G5; chord keys C4..C5 = 7..19; B3 (6) = variation */
 const NOTE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -147,7 +147,7 @@ function send(m){ if (node && ready) node.port.postMessage(m); }
 const knobsEl = $('knobs');
 ENC.forEach((e) => {
   const w = document.createElement('div'); w.className = 'knob';
-  w.innerHTML = `<div class="dial" role="slider" tabindex="0" aria-label="${e.fn} (${e.dev})" aria-valuetext="tourner"></div><span class="fn">${e.fn}</span><span class="dev">${e.dev} · ${e.alt}</span>`;
+  w.innerHTML = `<div class="dial" role="slider" tabindex="0" aria-label="${e.fn} (${e.dev})" aria-valuetext="tourner"></div><span class="fn">${e.fn}</span><span class="dev">${e.dev}</span>`;
   knobsEl.appendChild(w);
   const dial = w.querySelector('.dial');
   let y0 = 0, acc = 0, rot = 0;
@@ -188,10 +188,10 @@ const setKey = (k, down) => { keys = down ? (keys | (1 << k)) : (keys & ~(1 << k
 for (let k = 0; k < 27; k++) {
   const black = isBlack(k);
   const el = document.createElement('button'); el.type = 'button';
-  const chord = k >= 7 && k <= 19, tag = chord ? '♪' : (k === 6 ? 'VAR' : '');
+  const chord = true, tag = '♪';
   el.className = 'k ' + (black ? 'bk' : 'wk') + (chord ? ' chord' : '');
   el.innerHTML = `<span class="t">${tag}</span><span class="n">${KEY_NAMES[k]}</span>`;
-  el.setAttribute('aria-label', KEY_NAMES[k] + (chord ? ', accord' : k === 6 ? ', variation' : ''));
+  el.setAttribute('aria-label', KEY_NAMES[k] + ', accord');
   if (black) el.style.left = (white / 16 * 100) + '%'; else { el.style.gridColumn = String(white + 1); white++; }
   el.addEventListener('pointerdown', (ev) => { ev.preventDefault(); start(); el.setPointerCapture(ev.pointerId); setKey(k, true); });
   const up = () => setKey(k, false);
@@ -206,8 +206,7 @@ document.addEventListener('keydown', (ev) => {
   const c = ev.code, pi = PIANO_CODES.indexOf(c);
   if (ev.repeat) { if (pi >= 0 || c === 'Space') ev.preventDefault(); return; }
   if (pi >= 0) { ev.preventDefault(); start(); setKey(7 + pi, true); return; }
-  if (c === 'Space') { ev.preventDefault(); start(); setKey(6, true); return; }
-  if (c === 'ShiftLeft' || c === 'ShiftRight') { setButton(B.SEL, true); return; }
+  if (c === 'Space') { ev.preventDefault(); start(); setButton(B.ENV, true); return; }
   const encs = {KeyB:[2,-1], KeyN:[2,1], KeyZ:[0,-1], KeyX:[0,1], KeyC:[1,-1], KeyV:[1,1]};
   if (encs[c]) { start(); send({type:'enc', role:encs[c][0], n:encs[c][1]}); return; }
   const btns = {KeyR:B.SEQ, KeyO:B.FX, KeyP:B.LFO, KeyQ:B.ARP, KeyL:B.PLAY};
@@ -216,8 +215,7 @@ document.addEventListener('keydown', (ev) => {
 document.addEventListener('keyup', (ev) => {
   const pi = PIANO_CODES.indexOf(ev.code);
   if (pi >= 0) { setKey(7 + pi, false); return; }
-  if (ev.code === 'Space') setKey(6, false);
-  if (ev.code === 'ShiftLeft' || ev.code === 'ShiftRight') setButton(B.SEL, false);
+  if (ev.code === 'Space') setButton(B.ENV, false);
 });
 window.addEventListener('blur', () => { keys = 0; buttons = 0; send({type:'keys', mask:0}); send({type:'buttons', mask:0}); });
 

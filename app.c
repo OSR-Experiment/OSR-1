@@ -3,22 +3,20 @@
 /* OSR-1 app: input, chord grids, the screen, settings. Part of the unity build (device/unity.c,
  * host/plat_host.c), after the platform: gfx.c and announce.c are in scope. The sound is dsp/engine.c.
  *
- * Controls
- *   keys C4..C5 (13)  the chords of the grid: white keys safe, black keys spices
- *   key B3 / ENV      VARIATION while held (sus version, bass on the fifth)
- *   PRESET            grid                      SEL + PRESET   key (transpose)
- *   ALGORITHM         rhythm                    SEL + ALGO     richness
- *   SELECT            sound                     SEL + SELECT   family
- *   K1 cutoff  K2 resonance  K3 reverb  K4 delay
- *   SEL + K1 glide    SEL + K2 voicing          SEL + K3 swing (reserved)   SEL + K4 BPM
- *   OCT- / OCT+       octave ("couleur")
- *   SEQ rhythm on/off   FX kick   LFO sidechain   ARP bass   PLAY latch   SAVE settings */
+ * Controls: one action per control, no shift layer
+ *   all 27 keys     chords of the grid (same note name, same chord; C5 = the grid's 8th chord),
+ *                   white keys safe, black keys spices; below C4 an octave down, above C5 an octave up
+ *   PRESET grid   ALGORITHM rhythm   SELECT sound (all 32, family shown)
+ *   K1 cutoff   K2 glide   K3 reverb   K4 BPM            (fast turns move further)
+ *   ENV variation (hold)   SEL richness   EDIT voicing   GLO key -   HOME key +   SAVE delay on/off
+ *   FX kick   LFO sidechain   ARP bass   SEQ rhythm on/off   PLAY latch   OCT- / OCT+ octave   REC free
+ *   Settings save themselves a few seconds after the last change. */
 #include "fastmath.h"
 #include "engine.h"
 #include "data.h"
 
 /* ------------------------------------------------------------------ settings --- */
-#define SET_MAGIC 0x4F535231u            /* "OSR1" */
+#define SET_MAGIC 0x4F535232u            /* "OSR2" (v2 layout) */
 typedef struct {
     uint32_t magic;
     uint8_t grid, key, rich, voicing;
@@ -26,10 +24,12 @@ typedef struct {
     uint8_t sound, rhythm, rhythm_on;
     uint8_t kick, side, bass_on, latch;
     uint8_t glide, cutoff, reso, reverb, delay, bpm;   /* knobs: 0..100 (glide in 1/100 of 1.5 s, bpm 70..160) */
-    uint8_t rsv[2];
+    uint8_t delay_on;
+    uint8_t rsv[1];
 } settings_t;
 static settings_t set;
 static uint8_t set_dirty;
+static uint32_t dirty_at;             /* when the settings last changed (auto-save)*/
 
 static void settings_defaults(void)
 {
@@ -42,7 +42,8 @@ static void settings_defaults(void)
     set.cutoff = 72;
     set.reso = 20;
     set.reverb = 45;
-    set.delay = 25;
+    set.delay = 30;
+    set.delay_on = 0;
     set.bpm = 118;
 }
 
@@ -116,17 +117,22 @@ static char variation_of(char q)
 typedef struct { int root; int8_t iv[6]; int n; int bass_off; int oct; int shift; } chord_t;
 static uint8_t variation;                /* VARIATION held */
 
-static chord_t build_chord(int idx)
+#define KEY_C4 7                         /* key index of C4 (key 0 is F3) */
+static chord_t build_chord(int key)
 {
     chord_t c;
-    const chord_def_t *d = 0;
-    int i;
-    for (i = 0; i < 8; i++) if (WHITE_IDX[i] == idx) d = &grid_w[set.grid][i];
-    for (i = 0; i < 5; i++) if (BLACK_IDX[i] == idx % 12) d = &grid_b[set.grid][i];
+    const chord_def_t *d;
+    int rel = key - KEY_C4, pos = ((rel % 12) + 12) % 12, oct = rel < 0 ? -1 : rel / 12, i;
+    d = &grid_w[set.grid][0];
+    if (pos == 0 && oct >= 1) d = &grid_w[set.grid][7];            /* C5: the grid's 8th chord */
+    else {
+        for (i = 0; i < 7; i++) if (WHITE_IDX[i] == pos) d = &grid_w[set.grid][i];
+        for (i = 0; i < 5; i++) if (BLACK_IDX[i] == pos) d = &grid_b[set.grid][i];
+    }
     c.root = (set.key + d->semi) % 12;
     c.n = quality_ivs(variation ? variation_of(d->q) : d->q, set.rich, c.iv);
     c.bass_off = variation ? 7 : 0;
-    c.oct = idx == 12;
+    c.oct = oct;
     c.shift = set.octave * 12;
     return c;
 }
@@ -249,7 +255,7 @@ static void send_params(void)
 {
     eng_params((float)set.bpm, cutoff_hz(), reso_q(), set.kick, set.side, set.bass_on);
 }
-static void send_fx(void) { eng_fx((float)set.reverb * 0.01f, (float)set.delay * 0.01f); }
+static void send_fx(void) { eng_fx((float)set.reverb * 0.01f, set.delay_on ? (float)set.delay * 0.01f : 0.0f); }
 
 /* ------------------------------------------------------------------ playing --- */
 static int cur_idx = -1, held_idx = -1, active;
@@ -305,7 +311,7 @@ void app_init(void)
     if (plat_store_load(OBJ_SETTINGS, &set, sizeof set) != (int)sizeof set || set.magic != SET_MAGIC
         || set.grid >= NGRID || set.key > 11u || set.rich > 3u || set.voicing > 2u || set.octave < -2
         || set.octave > 2 || set.sound >= NFAMILY * PER_FAMILY || set.rhythm >= NRHYTHM || set.bpm < 70u
-        || set.bpm > 160u)
+        || set.bpm > 160u || set.delay_on > 1u)
         settings_defaults();
     eng_init();
     send_sound();
@@ -370,7 +376,7 @@ static void say_pct(const char *what, uint8_t v)
     app_say(what, t);
 }
 
-static void dirty(void) { set_dirty = 1; ui.redraw_top = ui.redraw_bottom = 1; }
+static void dirty(void) { set_dirty = 1; dirty_at = plat_ms(); ui.redraw_top = ui.redraw_bottom = 1; }
 
 static int step_u8(uint8_t *v, int32_t d, int lo, int hi)
 {
@@ -382,60 +388,48 @@ static int step_u8(uint8_t *v, int32_t d, int lo, int hi)
 
 static void wrap_u8(uint8_t *v, int32_t d, int n) { *v = (uint8_t)(((int32_t)*v + d % n + n) % n); }
 
-static void encoder(int k, int32_t e, int shift)
+/* a quick turn moves further: x1 slow, x2, x4 when the detents come close together */
+static uint32_t enc_at[NE];
+static int32_t accel(int k, int32_t e)
+{
+    uint32_t now = plat_ms(), dt = now - enc_at[k];
+    enc_at[k] = now;
+    if (dt < 40u) return e * 4;
+    if (dt < 90u) return e * 2;
+    return e;
+}
+
+static void encoder(int k, int32_t e)
 {
     char t[24];
     switch (k) {
     case EN_PRESET:
-        if (shift) { wrap_u8(&set.key, e, 12); app_say("TONALITE", NOTE[set.key]); }
-        else { wrap_u8(&set.grid, e, NGRID); set.rich = GRID_DEF[set.grid].rich; app_say("GRILLE", GRID_DEF[set.grid].name); }
+        wrap_u8(&set.grid, e, NGRID); set.rich = GRID_DEF[set.grid].rich; app_say("GRILLE", GRID_DEF[set.grid].name);
         rechord();
         break;
-    case EN_ALGO:
-        if (shift) { step_u8(&set.rich, e, 0, 3); app_say("RICHESSE", RICH_NAME[set.rich]); rechord(); }
-        else { wrap_u8(&set.rhythm, e, NRHYTHM); app_say("RYTHME", RHYTHM_NAME[set.rhythm]); send_rhythm(); }
-        break;
+    case EN_ALGO: wrap_u8(&set.rhythm, e, NRHYTHM); app_say("RYTHME", RHYTHM_NAME[set.rhythm]); send_rhythm(); break;
     case EN_SELECT:
-        if (shift) {
-            uint8_t f = (uint8_t)(set.sound / PER_FAMILY);
-            wrap_u8(&f, e, NFAMILY);
-            set.sound = (uint8_t)(f * PER_FAMILY);
-            app_say(FAMILY_NAME[f], SOUND_NAME[set.sound]);
-        } else {
-            wrap_u8(&set.sound, e, NFAMILY * PER_FAMILY);
-            app_say("SON", SOUND_NAME[set.sound]);
-        }
+        wrap_u8(&set.sound, e, NFAMILY * PER_FAMILY);
+        app_say(FAMILY_NAME[set.sound / PER_FAMILY], SOUND_NAME[set.sound]);
         send_sound();
         break;
     case EN_K1:
-        if (shift) {
-            step_u8(&set.glide, e, 0, 100);
-            if (set.glide < 1u) app_say("GLIDE", "OFF");
-            else { int_text((int32_t)(set.glide * 15u), t); text_cat(t, " MS"); app_say("GLIDE", t); }
-        } else {
-            step_u8(&set.cutoff, e, 0, 100);
-            int_text((int32_t)cutoff_hz(), t); text_cat(t, " HZ"); app_say("CUTOFF", t);
-            send_params();
-        }
+        step_u8(&set.cutoff, accel(k, e) * 3, 0, 100);
+        int_text((int32_t)cutoff_hz(), t); text_cat(t, " HZ"); app_say("CUTOFF", t);
+        send_params();
         break;
     case EN_K2:
-        if (shift) { step_u8(&set.voicing, e, 0, 2); app_say("VOICING", VOICING_NAME[set.voicing]); rechord(); }
-        else { step_u8(&set.reso, e, 0, 100); say_pct("RESONANCE", set.reso); send_params(); }
+        step_u8(&set.glide, accel(k, e) * 3, 0, 100);
+        if (set.glide < 1u) app_say("GLIDE", "OFF");
+        else { int_text((int32_t)(set.glide * 15u), t); text_cat(t, " MS"); app_say("GLIDE", t); }
         break;
-    case EN_K3:
-        if (!shift) { step_u8(&set.reverb, e, 0, 100); say_pct("REVERB", set.reverb); send_fx(); }
-        break;
-    case EN_K4:
-        if (shift) { step_u8(&set.bpm, e, 70, 160); int_text(set.bpm, t); app_say("BPM", t); send_params(); }
-        else { step_u8(&set.delay, e, 0, 100); say_pct("DELAY", set.delay); send_fx(); }
-        break;
+    case EN_K3: step_u8(&set.reverb, accel(k, e) * 3, 0, 100); say_pct("REVERB", set.reverb); send_fx(); break;
+    case EN_K4: step_u8(&set.bpm, accel(k, e), 70, 160); int_text(set.bpm, t); app_say("BPM", t); send_params(); break;
     default: break;
     }
     dirty();
 }
 
-#define CHORD_KEY0 7                     /* C4 */
-#define VAR_KEY 6                        /* B3 */
 
 static void set_variation(int on)
 {
@@ -453,6 +447,15 @@ static void button(int k)
     case B_FX: set.kick ^= 1u; send_params(); app_say("KICK", set.kick ? "ON" : "OFF"); break;
     case B_LFO: set.side ^= 1u; send_params(); app_say("SIDECHAIN", set.side ? "ON" : "OFF"); break;
     case B_ARP: set.bass_on ^= 1u; send_params(); app_say("BASSE", set.bass_on ? "ON" : "OFF"); break;
+    case B_SAVE: set.delay_on ^= 1u; send_fx(); app_say("DELAY", set.delay_on ? "ON" : "OFF"); break;
+    case B_SEL: wrap_u8(&set.rich, 1, 4); app_say("RICHESSE", RICH_NAME[set.rich]); rechord(); break;
+    case B_EDIT: wrap_u8(&set.voicing, 1, 3); app_say("VOICING", VOICING_NAME[set.voicing]); rechord(); break;
+    case B_GLO:
+    case B_HOME:
+        wrap_u8(&set.key, k == B_HOME ? 1 : -1, 12);
+        app_say("TONALITE", NOTE[set.key]);
+        rechord();
+        break;
     case B_PLAY:
         set.latch ^= 1u;
         if (!set.latch && held_idx < 0 && active) stop();
@@ -465,10 +468,6 @@ static void button(int k)
         app_say("OCTAVE", t);
         rechord();
         break;
-    case B_SAVE:
-        if (plat_store_save(OBJ_SETTINGS, &set, sizeof set) == 0) { set_dirty = 0; app_say("SAUVE", ""); }
-        else app_say("SAUVEGARDE", "ECHEC");
-        return;
     default: return;
     }
     dirty();
@@ -476,11 +475,10 @@ static void button(int k)
 
 static void input(void)
 {
-    uint32_t keys = plat_keys(), btn = plat_buttons(), k, lit_keys = 0, dim_keys = 0, lit_btn = 0;
-    int shift = (btn >> B_SEL) & 1u;
+    uint32_t keys = plat_keys(), btn = plat_buttons(), k, lit_keys = 0, lit_btn = 0;
     int32_t e;
-    for (k = 0; k < 13u; k++) {
-        uint32_t bit = 1u << (CHORD_KEY0 + k);
+    for (k = 0; k < NKEYS; k++) {
+        uint32_t bit = 1u << k;
         if ((keys & bit) && !(ui.keys & bit)) { held_idx = (int)k; play((int)k); ui.redraw_top = 1; }
         else if (!(keys & bit) && (ui.keys & bit) && held_idx == (int)k) {
             held_idx = -1;
@@ -488,30 +486,31 @@ static void input(void)
             ui.redraw_top = 1;
         }
     }
-    set_variation(((keys >> VAR_KEY) & 1u) || ((btn >> B_ENV) & 1u));
+    set_variation((btn >> B_ENV) & 1u);
     for (k = 0; k < NB; k++) {
         uint32_t bit = 1u << k;
         if ((btn & bit) && !(ui.btn & bit)) button((int)k);
     }
     for (k = 0; k < NE; k++)
         if ((e = plat_enc((int)k)) != 0)
-            encoder((int)k, e, shift);
+            encoder((int)k, e);
     ui.keys = keys;
     ui.btn = btn;
-    /* lights: the chord keys glow, the one playing is lit; the toggles lit when on */
-    for (k = 0; k < 13u; k++) dim_keys |= 1u << (CHORD_KEY0 + k);
-    dim_keys |= 1u << VAR_KEY;
-    if (cur_idx >= 0) lit_keys |= 1u << (CHORD_KEY0 + (uint32_t)cur_idx);
-    if (variation) lit_keys |= 1u << VAR_KEY;
+    /* auto-save: 4 s after the last change, and never while a chord plays (a flash write stops the sound) */
+    if (set_dirty && !active && plat_ms() - dirty_at > 4000u) {
+        if (plat_store_save(OBJ_SETTINGS, &set, sizeof set) == 0) set_dirty = 0;
+        else dirty_at = plat_ms();
+    }
+    /* lights: the keys glow, the one playing is lit; the toggles lit when on */
+    if (cur_idx >= 0) lit_keys |= 1u << (uint32_t)cur_idx;
     if (set.rhythm_on) lit_btn |= 1u << B_SEQ;
     if (set.kick) lit_btn |= 1u << B_FX;
     if (set.side) lit_btn |= 1u << B_LFO;
     if (set.bass_on) lit_btn |= 1u << B_ARP;
+    if (set.delay_on) lit_btn |= 1u << B_SAVE;
     if (set.latch) lit_btn |= LED_PLAY_GREEN;
-    if (set_dirty) lit_btn |= 1u << B_SAVE;
-    if (shift) lit_btn |= 1u << B_SEL;
     if (variation) lit_btn |= 1u << B_ENV;
-    plat_lights(lit_btn, lit_keys, 0, dim_keys, 1);
+    plat_lights(lit_btn, lit_keys, 0, (1u << NKEYS) - 1u, 1);
 }
 
 void app_input_only(void) { input(); }
@@ -662,6 +661,7 @@ int app_expect(const char *what, int *got)
     else if (!strcmp(what, "kick")) *got = set.kick;
     else if (!strcmp(what, "variation")) *got = variation;
     else if (!strcmp(what, "dirty")) *got = set_dirty;
+    else if (!strcmp(what, "bpm")) *got = set.bpm;
     else return 0;
     return 1;
 }

@@ -8,25 +8,27 @@ et [felucca-bsp](https://github.com/hugelton/felucca-bsp).
 
 ## Commandes
 
-| Commande | Fonction | Avec SEL (shift) |
-| --- | --- | --- |
-| Touches Do4 à Do5 (13) | Accords de la grille : blanches = sûrs, noires = épices | |
-| Touche Si3 ou ENV (tenir) | VARIATION : version sus, basse sur la quinte | |
-| PRESET | Grille d'accords (38) | Tonalité |
-| ALGORITHM | Rythme (16) | Richesse (triade, 7e, 9e, riche) |
-| SELECT | Son (32) | Famille |
-| K1 | Cutoff | Glide |
-| K2 | Résonance | Voicing (serré, ouvert, large) |
-| K3 | Reverb | (libre) |
-| K4 | Delay | BPM |
-| OCT- / OCT+ | Octave | |
-| SEQ | Rythme on/off | |
-| FX | Kick | |
-| LFO | Sidechain | |
-| ARP | Basse on/off | |
-| PLAY | Latch (l'accord continue) | |
-| SAVE | Sauver les réglages | |
-| EDIT, GLO, HOME, REC | Libres (REC : futur LOOP) | |
+Une seule fonction par commande, sans touche shift.
+
+| Commande | Fonction |
+| --- | --- |
+| Les 27 touches | Accords de la grille : même nom de note, même accord (Do5 = 8e accord). Blanches = sûrs, noires = épices. Sous le Do4 une octave plus bas, au-dessus du Do5 une octave plus haut |
+| PRESET | Grille d'accords (38) |
+| ALGORITHM | Rythme (16) |
+| SELECT | Son (32, la famille s'affiche) |
+| K1 / K2 / K3 / K4 | Cutoff / Glide / Reverb / BPM (un geste rapide va plus loin) |
+| ENV (tenir) | Variation : version sus, basse sur la quinte |
+| SEL | Richesse (triade, 7e, 9e, riche) |
+| EDIT | Voicing (serré, ouvert, large) |
+| GLO / HOME | Tonalité - / + |
+| SAVE | Delay on/off |
+| FX / LFO / ARP | Kick / Sidechain / Basse |
+| SEQ | Rythme on/off |
+| PLAY | Latch |
+| OCT- / OCT+ | Octave |
+| REC | Libre (futur LOOP) |
+
+Les réglages se sauvent tout seuls 4 secondes après le dernier changement, quand aucun accord ne joue.
 
 ## Fabriquer le firmware
 
