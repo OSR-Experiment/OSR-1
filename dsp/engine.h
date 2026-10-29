@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Copyright (C) 2026 Obsimo (OSR Records) */
 /* OSR-1 sound engine: 4 chord voices + bass (sub / FM / plucked string), a resonant filter, envelopes,
  * a 16-step chord-rhythm sequencer, a 4/4 kick, sidechain, chorus, ping-pong delay and a light reverb.
  * Port of the browser prototype's worklet. The main loop talks to it through eng_* calls (a small queue);

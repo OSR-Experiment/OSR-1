@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Obsimo (OSR Records)
 import fs from 'fs';
 const html = fs.readFileSync(new URL('../prototype/osr1-prototype.html', import.meta.url), 'utf8');
 const s = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
@@ -9,7 +11,7 @@ const DEF = {engine:'sub', w1:0, w2:0, det:6, oct2:0, mix2:.5, ratio:1, idx:1, i
   bright:.6, damp:.996, atk:.01, dec:.3, sus:1, rel:.5, fenv:1, fdec:.3, chorus:.5, wob:5, wobRate:.3, noise:0, bass:.45, level:1};
 const f = x => { let t = (+x).toString(); if (!t.includes('.') && !t.includes('e')) t += '.0'; return t + 'f'; };
 const esc = n => n.replace(/[éèê]/g,'E').replace(/[ô]/g,'O').replace(/[àâ]/g,'A').replace(/[ç]/g,'C').replace(/'/g,"'").toUpperCase();
-let out = `/* OSR-1 data: generated from the browser prototype (gen_data.mjs). Do not edit by hand. */\n#pragma once\n`;
+let out = `/* SPDX-License-Identifier: GPL-3.0-only\n * Copyright (C) 2026 Obsimo (OSR Records) */\n/* OSR-1 data: generated from the browser prototype (gen_data.mjs). Do not edit by hand. */\n#pragma once\n`;
 out += `static const char *const FAMILY_NAME[${FAMILIES.length}] = {${FAMILIES.map(x=>`"${esc(x.name)}"`).join(', ')}};\n`;
 out += `#define NFAMILY ${FAMILIES.length}\n#define PER_FAMILY 8\n`;
 out += `static const char *const SOUND_NAME[${FAMILIES.length*8}] = {\n` + FAMILIES.flatMap(x=>x.sounds).map(x=>`    "${esc(x.name)}"`).join(',\n') + '\n};\n';

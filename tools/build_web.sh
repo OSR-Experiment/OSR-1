@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 Obsimo (OSR Records)
 # The browser version of OSR-1 (the host simulator in WebAssembly) with Zig instead of Emscripten:
 #   pip install ziglang && tools/build_web.sh        ->  build/emu/app.wasm (+ web/emu/index.html, worklet.js)
 # Needs the host build's generated headers first: python3 fm1-base/tools/build.py . --host

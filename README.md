@@ -60,4 +60,9 @@ la machine (`plat_cpu_pct`). Si ça ne suffit pas : passer le moteur en RAM, ou 
 
 ## Licence
 
-fm1-base et felucca-bsp : MPL-2.0. Le code propre à OSR-1 : licence à choisir.
+OSR-1 est un logiciel libre sous **GPL-3.0-only** (voir `LICENSE`). Le code reste public, chacun peut l'étudier, le
+modifier et le redistribuer sous la même licence. Il peut donc reprendre du code d'autres firmwares FM-1 sous GPL
+(Felucca, Clipper...) ; chaque emprunt est crédité dans `CREDITS.md`.
+
+Les fichiers de fm1-base et felucca-bsp restent sous MPL-2.0 (compatible avec la GPL), `web/emu/worklet.js` aussi
+(repris de fm1-base). Le paquet installable contient trois fichiers du SDK AC79 de JieLi (Apache-2.0).

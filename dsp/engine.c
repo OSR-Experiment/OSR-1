@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Copyright (C) 2026 Obsimo (OSR Records) */
 /* OSR-1 sound engine. See engine.h. Single precision only (the FM-1's FPU), no double.
  * The render works in chunks of 32 frames: pitches, the filter coefficient and the LFOs are updated per chunk,
  * envelopes, oscillators and effects per sample. */

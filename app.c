@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Copyright (C) 2026 Obsimo (OSR Records) */
 /* OSR-1 app: input, chord grids, the screen, settings. Part of the unity build (device/unity.c,
  * host/plat_host.c), after the platform: gfx.c and announce.c are in scope. The sound is dsp/engine.c.
  *

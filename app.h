@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Copyright (C) 2026 Obsimo (OSR Records) */
 /* OSR-1: one-finger chord grids, chord rhythms, kick and sidechain, for the M-VAVE FM-1 (on fm1-base).
  * This header is the app's half of the contract with the platform (device/unity.c, host/plat_host.c). */
 #pragma once

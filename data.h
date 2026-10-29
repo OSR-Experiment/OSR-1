@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Copyright (C) 2026 Obsimo (OSR Records) */
 /* OSR-1 data: generated from the browser prototype (gen_data.mjs). Do not edit by hand. */
 #pragma once
 static const char *const FAMILY_NAME[4] = {"NAPPES", "CLAVIERS", "PLUCKS", "EXPERIMENTAL"};

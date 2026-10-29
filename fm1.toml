@@ -10,5 +10,5 @@ font_full = ["L"]               # lower case in the big font: chord names (Am7, 
 ble = false
 tagline = "chord grids, chord rhythms, kick and sidechain for the FM-1"
 repo = ""
-licence = "MPL-2.0 (fm1-base) + OSR-1's own"
-credits = "Built on fm1-base and felucca-bsp."
+licence = "GPL-3.0-only"
+credits = "Built on fm1-base (Charles Vestal) and felucca-bsp (Leo Kuroshita, Hügelton Instruments)."
