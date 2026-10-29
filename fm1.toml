@@ -5,6 +5,7 @@ usb_manufacturer = "OSR Records"
 usb_product = "OSR-1"
 o2 = ["dsp/engine.c"]           # the sound engine, at -O2
 include = ["dsp"]
+vendored = ["fm1-base/", "prototype/"]   # fm1-base is a submodule inside the app: its own checks are its own
 words = "words.tsv"
 font_full = ["L"]               # lower case in the big font: chord names (Am7, Cmaj9, sus4)
 ble = false
