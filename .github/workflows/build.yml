@@ -1,0 +1,44 @@
+# Builds the OSR-1 firmware (.fwsc, installable on an FM-1) on GitHub's machines, which can reach JieLi's
+# toolchain server. Also runs the host simulator's tests and builds the browser version.
+# Result: Actions tab > the run > "Artifacts" > osr1-firmware.
+name: Build firmware
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libtinfo5 libncurses5 xz-utils
+          pip install -q Pillow fonttools
+
+      - name: Host simulator tests
+        run: |
+          python3 fm1-base/tools/build.py . --host
+          build/host/osr1_host tests/basic.txt build/host
+
+      - name: JieLi toolchain and AC79 SDK
+        run: |
+          fm1-base/tools/get_toolchain.sh "$HOME/.jieli"
+          fm1-base/bsp/tools/get_sdk.sh "$HOME/.jieli/ac79-sdk"
+
+      - name: Firmware
+        run: |
+          export JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" AC79_SDK="$HOME/.jieli/ac79-sdk"
+          python3 fm1-base/tools/build.py .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osr1-firmware
+          path: |
+            build/*.fwsc
+            build/host/*.png
+            build/host/*.wav

@@ -1,0 +1,86 @@
+# OSR-1 in the host simulator:
+#   tools/build.py /path/to/osr1 --host, then osr1/build/host/osr1_host osr1/tests/basic.txt osr1/build/host
+wait 600
+shot boot.png
+expect grid 0
+expect active 0
+# a chord: C4 is key 7 (the grid's first white key)
+key 7 down
+wait 40
+expect active 1
+expect chord 0
+wav hold_pop.wav
+wait 1500
+wavstop
+shot chord.png
+key 7 up
+wait 30
+expect active 0
+# another grid, a rhythm, the kick and the sidechain
+turn PRESET 2
+wait 30
+expect grid 2
+turn ALGO 7
+wait 30
+expect rhythm 7
+tap FX
+tap LFO
+wait 30
+expect kick 1
+tap PLAY
+key 9 down
+wait 20
+key 9 up
+wait 20
+expect active 1
+wav rhythm_kick.wav
+wait 3000
+wavstop
+shot rhythm.png
+# change chords while the rhythm plays (no glide: the quick fade)
+key 12 down
+wait 400
+key 12 up
+key 14 down
+wait 400
+key 14 up
+# variation (B3, key 6)
+key 6 down
+wait 30
+expect variation 1
+shot variation.png
+key 6 up
+wait 30
+expect variation 0
+tap PLAY
+wait 30
+expect active 0
+# sounds: a pluck, an FM key
+turn SELECT 18
+wait 30
+expect sound 18
+tap FX
+tap LFO
+turn ALGO -7
+key 7 down
+wait 20
+wav pluck.wav
+wait 1200
+wavstop
+key 7 up
+turn SELECT -8
+wait 30
+key 11 down
+wav fm.wav
+wait 1200
+wavstop
+key 11 up
+wait 30
+# settings survive a reboot after SAVE
+tap SAVE
+wait 30
+expect dirty 0
+reboot
+wait 600
+expect grid 2
+expect sound 10

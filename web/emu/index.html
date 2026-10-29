@@ -1,0 +1,301 @@
+<title>OSR-1 Firmware</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: the real firmware's screen beside its controls, grouped by what they do; the 27 keys below.
+   Single dark look by choice, matching the OSR-1 prototype. */
+:root{
+  --bg:#120e19; --panel:#1e1828; --panel-hi:#2a2236; --line:#3a304a;
+  --ink:#f1e8ef; --muted:#a597b0; --accent:#ff9a5c; --accent-2:#ff6f9c; --violet:#b98bff; --sky:#7fd1ff;
+  --key:#efe2d3; --key-ink:#2a1f2e;
+  --display:'Unbounded','Arial Black',system-ui,sans-serif;
+  --body:'Manrope',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--bg);color:var(--ink)}
+body{font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:960px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:20px}
+header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:14px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,6vw,44px);margin:0;line-height:1}
+h1 span{color:var(--accent)}
+.sub{margin:6px 0 0;color:var(--muted);max-width:60ch}
+.status{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#power{font:600 14px var(--body);background:var(--accent);color:#1b1016;border:0;border-radius:999px;padding:11px 20px;cursor:pointer}
+#power[aria-pressed="true"]{background:var(--panel-hi);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+#load{font:600 12px var(--mono);color:var(--muted)}
+.device{background:linear-gradient(180deg,var(--panel-hi),var(--panel) 40%);border-radius:22px;padding:18px;box-shadow:0 30px 60px -30px #000,inset 0 1px 0 #ffffff14;display:grid;gap:18px}
+.top{display:grid;grid-template-columns:minmax(240px,360px) minmax(0,1fr);gap:20px;align-items:start}
+.bezel{background:#000;border-radius:12px;padding:8px}
+#screen{display:block;width:100%;aspect-ratio:1/1;image-rendering:pixelated;border-radius:4px;background:#0a0710}
+.controls{display:grid;gap:14px;min-width:0}
+.group{min-width:0}
+.device,.top>*{min-width:0}
+.group h2{font:600 10px var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.knobs{display:grid;grid-template-columns:repeat(4,1fr);gap:12px 8px}
+.knob{display:grid;justify-items:center;gap:4px;user-select:none;touch-action:none}
+.dial{width:52px;height:52px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3b3149,#17121f 70%);box-shadow:0 6px 12px -4px #000,inset 0 1px 0 #ffffff1a;position:relative;cursor:ns-resize;outline:none}
+.dial:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.dial::after{content:"";position:absolute;left:50%;top:5px;width:3px;height:12px;margin-left:-1.5px;border-radius:2px;background:var(--accent);transform-origin:50% 21px;transform:rotate(var(--rot,0deg))}
+.knob .fn{font:700 11px var(--body);text-align:center}
+.knob .dev{font:600 9px var(--mono);color:var(--muted);letter-spacing:.06em}
+.master{display:flex;align-items:center;gap:10px;font:600 11px var(--mono);color:var(--muted)}
+.master input{flex:1;accent-color:var(--accent)}
+.buttons{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.btn{background:#0b0810;color:var(--ink);border:1px solid #ffffff12;border-radius:8px;padding:7px 2px;cursor:pointer;box-shadow:0 4px 0 #00000080;display:grid;gap:1px;justify-items:center;touch-action:none;user-select:none;min-width:0}
+.btn b{font:700 11px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.btn small{font:600 8.5px var(--mono);color:var(--muted);letter-spacing:.06em}
+.btn.free b{color:#5a4f66}
+.btn.lit{background:var(--sky);color:#0c1820;box-shadow:0 0 16px -2px var(--sky),0 2px 0 #00000080}
+.btn.lit small{color:#0c1820}
+.btn.green{background:#6ef0a0;color:#0c2016;box-shadow:0 0 16px -2px #6ef0a0,0 2px 0 #00000080}
+.btn.green small{color:#0c2016}
+.btn.down{transform:translateY(2px)}
+.keysWrap{overflow-x:auto;padding-bottom:4px}
+.keys{position:relative;display:grid;grid-template-columns:repeat(16,1fr);gap:3px;height:150px;min-width:560px}
+.k{border:0;cursor:pointer;touch-action:none;user-select:none;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:1px;padding:0 1px 8px;font-family:var(--mono);min-width:0}
+.wk{background:#cfc3b6;color:var(--key-ink);border-radius:4px 4px 9px 9px;box-shadow:0 5px 0 #8f8276}
+.wk.chord{background:var(--key);box-shadow:0 5px 0 #b8a796}
+.bk{position:absolute;top:0;width:4.4%;margin-left:-2.2%;height:56%;z-index:2;background:linear-gradient(180deg,#2a2236,#0b0810);color:var(--ink);border-radius:0 0 6px 6px;box-shadow:0 4px 0 #000}
+.k .n{font:600 9px var(--mono);opacity:.6}
+.k .t{font:700 9px var(--mono);color:var(--accent)}
+.bk .t{color:var(--violet)}
+.k.lit{background:var(--accent);color:#1b1016;box-shadow:0 0 22px -4px var(--accent)}
+.k.lit .t,.k.lit .n{color:#1b1016;opacity:1}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;color:var(--muted);font-size:14px}
+.notes h2{font:600 11px var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);margin:0 0 6px}
+.notes p{margin:0}
+.notes kbd{font:600 12px var(--mono);color:var(--ink);background:var(--panel-hi);border-radius:4px;padding:1px 5px}
+#err{color:var(--accent-2);font:600 13px var(--mono)}
+@media (max-width:720px){
+  .top{grid-template-columns:1fr}
+  .bezel{max-width:360px;width:100%;justify-self:center}
+  .buttons{grid-template-columns:repeat(4,1fr)}
+  .device{padding:12px;border-radius:16px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<main class="wrap">
+  <header>
+    <div>
+      <h1>OSR<span>-</span>1</h1>
+      <p class="sub">Le vrai code du firmware, compilé pour le navigateur&nbsp;: le même moteur, le même écran 240&nbsp;×&nbsp;240 et les mêmes commandes que sur le FM-1, rangées par fonction.</p>
+    </div>
+    <div class="status">
+      <span id="load" aria-live="polite"></span>
+      <button id="power" type="button" aria-pressed="false">Allumer</button>
+    </div>
+  </header>
+  <p id="err" hidden></p>
+
+  <section class="device" aria-label="OSR-1">
+    <div class="top">
+      <div class="bezel"><canvas id="screen" width="240" height="240" aria-label="Écran du firmware"></canvas></div>
+      <div class="controls">
+        <div class="group"><h2>Molettes · tenir SHIFT pour la 2e fonction</h2><div class="knobs" id="knobs"></div></div>
+        <label class="master" for="master">VOLUME <input id="master" type="range" min="0" max="4096" value="2800"></label>
+      </div>
+    </div>
+    <div class="group"><h2>Boutons</h2><div class="buttons" id="buttons"></div></div>
+    <div class="group"><h2>Clavier · 27 touches</h2><div class="keysWrap"><div class="keys" id="keys"></div></div></div>
+  </section>
+
+  <section class="notes">
+    <div><h2>Jouer</h2><p>Les 13 touches crème (Do à Do) jouent la grille. La touche VAR (Si grave) ou le bouton VARIATION donne la version alternative. Clavier ordi&nbsp;: rangée <kbd data-code="KeyA">A</kbd> à <kbd data-code="KeyK">K</kbd>, <kbd>Espace</kbd> variation.</p></div>
+    <div><h2>Molettes</h2><p>Glisser vers le haut ou le bas, ou la molette de la souris. Tenir SHIFT (ou <kbd>Maj</kbd>) donne la fonction du dessous&nbsp;: tonalité, richesse, famille, glide, voicing, BPM.</p></div>
+    <div><h2>Raccourcis</h2><p><kbd data-code="KeyB">B</kbd>/<kbd data-code="KeyN">N</kbd> grille, <kbd data-code="KeyZ">Z</kbd>/<kbd data-code="KeyX">X</kbd> son, <kbd data-code="KeyC">C</kbd>/<kbd data-code="KeyV">V</kbd> rythme, <kbd data-code="KeyR">R</kbd> rythme on/off, <kbd data-code="KeyO">O</kbd> kick, <kbd data-code="KeyP">P</kbd> sidechain, <kbd data-code="KeyQ">Q</kbd> basse, <kbd data-code="KeyL">L</kbd> latch.</p></div>
+  </section>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+
+/* the firmware's controls (plat.h order) and what OSR-1 does with them */
+const ENC = [
+  {role:2, dev:'PRESET', fn:'Grille', alt:'Tonalité'},
+  {role:1, dev:'ALGO', fn:'Rythme', alt:'Richesse'},
+  {role:0, dev:'SELECT', fn:'Son', alt:'Famille'},
+  {role:3, dev:'K1', fn:'Cutoff', alt:'Glide'},
+  {role:4, dev:'K2', fn:'Résonance', alt:'Voicing'},
+  {role:5, dev:'K3', fn:'Reverb', alt:'—'},
+  {role:6, dev:'K4', fn:'Delay', alt:'BPM'},
+];
+const B = {FX:0, SEL:1, ENV:2, LFO:3, EDIT:4, GLO:5, HOME:6, SAVE:7, ARP:8, SEQ:9, PLAY:10, REC:11, OCTDN:12, OCTUP:13};
+const BTN = [
+  {b:B.SEL, dev:'SEL', fn:'SHIFT'}, {b:B.ENV, dev:'ENV', fn:'VARIATION'}, {b:B.SEQ, dev:'SEQ', fn:'RYTHME'},
+  {b:B.FX, dev:'FX', fn:'KICK'}, {b:B.LFO, dev:'LFO', fn:'SIDE'}, {b:B.ARP, dev:'ARP', fn:'BASSE'},
+  {b:B.PLAY, dev:'PLAY', fn:'LATCH'}, {b:B.OCTDN, dev:'OCT-', fn:'OCTAVE -'}, {b:B.OCTUP, dev:'OCT+', fn:'OCTAVE +'},
+  {b:B.SAVE, dev:'SAVE', fn:'SAUVER'}, {b:B.EDIT, dev:'EDIT', fn:'libre', free:true}, {b:B.GLO, dev:'GLO', fn:'libre', free:true},
+  {b:B.HOME, dev:'HOME', fn:'libre', free:true}, {b:B.REC, dev:'REC', fn:'libre', free:true},
+];
+/* 27 keys F3..G5; chord keys C4..C5 = 7..19; B3 (6) = variation */
+const NOTE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const KEY_NAMES = Array.from({length:27}, (_, k) => { const m = 53 + k; return NOTE[m % 12] + (Math.floor(m / 12) - 1); });
+const isBlack = (k) => [1,3,6,8,10].includes((53 + k) % 12);
+const PIANO_CODES = ['KeyA','KeyW','KeyS','KeyE','KeyD','KeyF','KeyT','KeyG','KeyY','KeyH','KeyU','KeyJ','KeyK'];
+
+let ac = null, node = null, ready = false, buttons = 0, keys = 0;
+
+function send(m){ if (node && ready) node.port.postMessage(m); }
+
+/* ---------- knobs: drag or wheel sends encoder detents ---------- */
+const knobsEl = $('knobs');
+ENC.forEach((e) => {
+  const w = document.createElement('div'); w.className = 'knob';
+  w.innerHTML = `<div class="dial" role="slider" tabindex="0" aria-label="${e.fn} (${e.dev})" aria-valuetext="tourner"></div><span class="fn">${e.fn}</span><span class="dev">${e.dev} · ${e.alt}</span>`;
+  knobsEl.appendChild(w);
+  const dial = w.querySelector('.dial');
+  let y0 = 0, acc = 0, rot = 0;
+  const turn = (n) => { if (!n) return; rot = (rot + n * 15) % 360; dial.style.setProperty('--rot', rot + 'deg'); send({type:'enc', role:e.role, n}); };
+  dial.addEventListener('pointerdown', (ev) => { start(); dial.setPointerCapture(ev.pointerId); y0 = ev.clientY; acc = 0; dial.focus(); });
+  dial.addEventListener('pointermove', (ev) => {
+    if (!dial.hasPointerCapture(ev.pointerId)) return;
+    acc += (y0 - ev.clientY); y0 = ev.clientY;
+    const n = Math.trunc(acc / 10); if (n) { acc -= n * 10; turn(n); }
+  });
+  dial.addEventListener('wheel', (ev) => { ev.preventDefault(); start(); turn(ev.deltaY < 0 ? 1 : -1); }, {passive:false});
+  dial.addEventListener('keydown', (ev) => {
+    if (ev.key === 'ArrowUp' || ev.key === 'ArrowRight') { turn(1); ev.preventDefault(); ev.stopPropagation(); }
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowLeft') { turn(-1); ev.preventDefault(); ev.stopPropagation(); }
+  });
+});
+
+/* ---------- buttons ---------- */
+const btnEls = {};
+const setButton = (b, down) => { buttons = down ? (buttons | (1 << b)) : (buttons & ~(1 << b)); send({type:'buttons', mask:buttons}); btnEls[b] && btnEls[b].classList.toggle('down', down); };
+BTN.forEach((d) => {
+  const el = document.createElement('button'); el.type = 'button'; el.className = 'btn' + (d.free ? ' free' : '');
+  el.innerHTML = `<b>${d.fn}</b><small>${d.dev}</small>`;
+  el.setAttribute('aria-label', `${d.fn} (${d.dev})`);
+  el.addEventListener('pointerdown', (ev) => { ev.preventDefault(); start(); el.setPointerCapture(ev.pointerId); setButton(d.b, true); });
+  const up = () => setButton(d.b, false);
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  el.addEventListener('keydown', (ev) => { if ((ev.key === 'Enter' || ev.key === ' ') && !ev.repeat) { ev.preventDefault(); ev.stopPropagation(); start(); setButton(d.b, true); } });
+  el.addEventListener('keyup', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.stopPropagation(); setButton(d.b, false); } });
+  $('buttons').appendChild(el);
+  btnEls[d.b] = el;
+});
+
+/* ---------- keys ---------- */
+const keysEl = $('keys'), keyEls = [];
+let white = 0;
+const setKey = (k, down) => { keys = down ? (keys | (1 << k)) : (keys & ~(1 << k)); send({type:'keys', mask:keys}); };
+for (let k = 0; k < 27; k++) {
+  const black = isBlack(k);
+  const el = document.createElement('button'); el.type = 'button';
+  const chord = k >= 7 && k <= 19, tag = chord ? '♪' : (k === 6 ? 'VAR' : '');
+  el.className = 'k ' + (black ? 'bk' : 'wk') + (chord ? ' chord' : '');
+  el.innerHTML = `<span class="t">${tag}</span><span class="n">${KEY_NAMES[k]}</span>`;
+  el.setAttribute('aria-label', KEY_NAMES[k] + (chord ? ', accord' : k === 6 ? ', variation' : ''));
+  if (black) el.style.left = (white / 16 * 100) + '%'; else { el.style.gridColumn = String(white + 1); white++; }
+  el.addEventListener('pointerdown', (ev) => { ev.preventDefault(); start(); el.setPointerCapture(ev.pointerId); setKey(k, true); });
+  const up = () => setKey(k, false);
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  keysEl.appendChild(el); keyEls.push(el);
+}
+
+/* ---------- computer keyboard ---------- */
+document.addEventListener('keydown', (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.target.closest && (ev.target.closest('.dial') || ev.target.closest('input'))) return;
+  const c = ev.code, pi = PIANO_CODES.indexOf(c);
+  if (ev.repeat) { if (pi >= 0 || c === 'Space') ev.preventDefault(); return; }
+  if (pi >= 0) { ev.preventDefault(); start(); setKey(7 + pi, true); return; }
+  if (c === 'Space') { ev.preventDefault(); start(); setKey(6, true); return; }
+  if (c === 'ShiftLeft' || c === 'ShiftRight') { setButton(B.SEL, true); return; }
+  const encs = {KeyB:[2,-1], KeyN:[2,1], KeyZ:[0,-1], KeyX:[0,1], KeyC:[1,-1], KeyV:[1,1]};
+  if (encs[c]) { start(); send({type:'enc', role:encs[c][0], n:encs[c][1]}); return; }
+  const btns = {KeyR:B.SEQ, KeyO:B.FX, KeyP:B.LFO, KeyQ:B.ARP, KeyL:B.PLAY};
+  if (btns[c] !== undefined) { start(); setButton(btns[c], true); setTimeout(() => setButton(btns[c], false), 60); }
+});
+document.addEventListener('keyup', (ev) => {
+  const pi = PIANO_CODES.indexOf(ev.code);
+  if (pi >= 0) { setKey(7 + pi, false); return; }
+  if (ev.code === 'Space') setKey(6, false);
+  if (ev.code === 'ShiftLeft' || ev.code === 'ShiftRight') setButton(B.SEL, false);
+});
+window.addEventListener('blur', () => { keys = 0; buttons = 0; send({type:'keys', mask:0}); send({type:'buttons', mask:0}); });
+
+/* labels follow the real keyboard layout (AZERTY, QWERTY...) */
+(async () => {
+  let map = null;
+  try { if (navigator.keyboard && navigator.keyboard.getLayoutMap) map = await navigator.keyboard.getLayoutMap(); } catch (e) {}
+  const az = {KeyA:'Q', KeyQ:'A', KeyW:'Z', KeyZ:'W'};
+  const guess = !map && /^fr(-FR|-BE)?$/i.test(navigator.language || '');
+  document.querySelectorAll('kbd[data-code]').forEach((k) => { const l = map ? map.get(k.dataset.code) : (guess ? az[k.dataset.code] : null); if (l) k.textContent = l.toUpperCase(); });
+})();
+
+/* ---------- screen ---------- */
+const ctx2 = $('screen').getContext('2d');
+const img = ctx2.createImageData(240, 240);
+function drawScreen(fb){
+  const d = img.data;
+  for (let i = 0; i < 240 * 240; i++) {
+    const v = fb[i], p = ((v >> 8) | (v << 8)) & 0xFFFF;
+    d[i * 4] = ((p >> 11) & 31) * 255 / 31;
+    d[i * 4 + 1] = ((p >> 5) & 63) * 255 / 63;
+    d[i * 4 + 2] = (p & 31) * 255 / 31;
+    d[i * 4 + 3] = 255;
+  }
+  ctx2.putImageData(img, 0, 0);
+}
+ctx2.fillStyle = '#0a0710'; ctx2.fillRect(0, 0, 240, 240);
+ctx2.fillStyle = '#a597b0'; ctx2.font = '600 13px Manrope, sans-serif'; ctx2.fillText('Appuie sur Allumer', 64, 124);
+
+function lights(m){
+  BTN.forEach((d) => {
+    const el = btnEls[d.b];
+    const lit = (m.buttons >>> d.b) & 1;
+    el.classList.toggle('lit', !!lit && d.b !== B.PLAY);
+    el.classList.toggle('green', d.b === B.PLAY && !!((m.buttons >>> 14) & 1));
+  });
+  keyEls.forEach((el, k) => el.classList.toggle('lit', !!((m.keys >>> k) & 1)));
+}
+
+/* saved settings live in this browser */
+function loadStore(){ try { const s = JSON.parse(localStorage.getItem('osr1-store') || '{}'); const o = {}; for (const k in s) o[k] = s[k]; return o; } catch (e) { return {}; } }
+function saveStore(st){ try { const o = {}; for (const k in st) o[k] = Array.from(st[k]); localStorage.setItem('osr1-store', JSON.stringify(o)); } catch (e) {} }
+
+/* ---------- start ---------- */
+let starting = null;
+function start(){
+  if (starting) { if (ac && ac.state !== 'running') ac.resume(); return starting; }
+  starting = (async () => {
+    try {
+      ac = new AudioContext({sampleRate: 44100});
+      const [wasm] = await Promise.all([
+        fetch('app.wasm').then((r) => { if (!r.ok) throw new Error('app.wasm: ' + r.status); return r.arrayBuffer(); }),
+        ac.audioWorklet.addModule('worklet.js'),
+      ]);
+      node = new AudioWorkletNode(ac, 'fm1', {numberOfInputs: 0, outputChannelCount: [2]});
+      node.connect(ac.destination);
+      node.port.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === 'ready') { ready = true; send({type:'keys', mask:keys}); send({type:'buttons', mask:buttons}); return; }
+        if (m.type !== 'frame') return;
+        if (m.fb) drawScreen(m.fb);
+        lights(m);
+        if (m.store) saveStore(m.store);
+        if (m.load !== undefined) $('load').textContent = `navigateur : ${m.load} % du temps réel`;
+      };
+      node.port.postMessage({type:'load', wasm, store: loadStore(), master: +$('master').value}, [wasm]);
+      $('power').setAttribute('aria-pressed', 'true'); $('power').textContent = 'Allumé';
+    } catch (err) {
+      $('err').hidden = false; $('err').textContent = 'Le firmware n’a pas démarré : ' + err.message;
+      starting = null;
+    }
+  })();
+  return starting;
+}
+$('power').addEventListener('click', async () => {
+  if (ac && ac.state === 'running' && ready) { await ac.suspend(); $('power').setAttribute('aria-pressed', 'false'); $('power').textContent = 'Allumer'; }
+  else { await start(); if (ac && ac.state !== 'running') ac.resume(); }
+});
+$('master').addEventListener('input', (e) => send({type:'master', value:+e.target.value}));
+})();
+</script>
