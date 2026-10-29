@@ -6,9 +6,17 @@
 #include "engine.h"
 #include "fastmath.h"
 #include "plat.h"
-#include <string.h>
 
 #define SR ENG_SR
+
+/* no libc on the device: small copies and clears of our own */
+static void zero(void *d, uint32_t n) { uint8_t *p = (uint8_t *)d; while (n--) *p++ = 0; }
+static void copy(void *d, const void *s, uint32_t n)
+{
+    uint8_t *p = (uint8_t *)d;
+    const uint8_t *q = (const uint8_t *)s;
+    while (n--) *p++ = *q++;
+}
 #define CHUNK 32u
 #define KS_N 2048u                      /* plucked string loop: down to ~22 Hz */
 #define CH_N 2048u                      /* chorus line */
@@ -135,7 +143,7 @@ void eng_chord(const float notes[4], float bass, float glide_s)
 {
     cmd_t c;
     c.t = CMD_CHORD;
-    memcpy(c.u.c.notes, notes, sizeof c.u.c.notes);
+    copy(c.u.c.notes, notes, sizeof c.u.c.notes);
     c.u.c.bass = bass;
     c.u.c.glide = glide_s;
     push(&c);
@@ -253,7 +261,7 @@ static void chord_cmd(const float *notes, float bass, float glide)
     }
     if (gc >= 1.0f) { set_notes(notes, bass, gc); return; }
     if (E.e > 0.002f) {                 /* a quick fade, then the new chord as a fresh hit */
-        memcpy(E.pend_notes, notes, sizeof E.pend_notes);
+        copy(E.pend_notes, notes, sizeof E.pend_notes);
         E.pend_bass = bass;
         E.pending = 1;
         E.retrig = E.stage >= 1 && E.stage <= 3;
@@ -300,14 +308,14 @@ static void run_commands(void)
 void eng_init(void)
 {
     int i;
-    memset(&E, 0, sizeof E);
-    memset(ks_buf, 0, sizeof ks_buf);
-    memset(ch_buf, 0, sizeof ch_buf);
-    memset(dl_buf, 0, sizeof dl_buf);
-    memset(rv_pre, 0, sizeof rv_pre);
+    zero(&E, sizeof E);
+    zero(ks_buf, sizeof ks_buf);
+    zero(ch_buf, sizeof ch_buf);
+    zero(dl_buf, sizeof dl_buf);
+    zero(rv_pre, sizeof rv_pre);
     for (i = 0; i < 4; i++) {
-        memset(rv_line[i], 0, RV_LEN[i] * sizeof(float));
-        memset(ap_buf[i], 0, AP_LEN[i] * sizeof(float));
+        zero(rv_line[i], RV_LEN[i] * sizeof(float));
+        zero(ap_buf[i], AP_LEN[i] * sizeof(float));
         /* decay per line for a 2.4 s RT60: 10^(-3 len / (SR T60)) */
         E.rv_g[i] = fm_exp2f(-3.0f * 3.321928f * (float)RV_LEN[i] / (SR * 2.4f));
         E.v[i].m = E.v[i].target = 60.0f;
