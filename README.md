@@ -13,20 +13,23 @@ Une seule fonction par commande, sans touche shift.
 | Commande | Fonction |
 | --- | --- |
 | Les 27 touches | Accords de la grille : même nom de note, même accord (Do5 = 8e accord). Blanches = sûrs, noires = épices. Sous le Do4 une octave plus bas, au-dessus du Do5 une octave plus haut |
-| PRESET | Grille d'accords (38) |
-| ALGORITHM | Rythme (16) |
-| SELECT | Son (32, la famille s'affiche) |
+| SELECT | Grille d'accords (38) |
+| ALGORITHM | Rythme (16, TENU = sans rythme) |
+| PRESET | Son (32, la famille s'affiche) |
 | K1 / K2 / K3 / K4 | Cutoff / Glide / Reverb / BPM (un geste rapide va plus loin) |
+| FX / SCL | Kick / Sidechain (côte à côte) |
 | ENV (tenir) | Variation : version sus, basse sur la quinte |
-| SEL | Richesse (triade, 7e, 9e, riche) |
+| LFO | Basse |
 | EDIT | Voicing (serré, ouvert, large) |
-| GLO / HOME | Tonalité - / + |
+| GLO | Richesse (triade, 7e, 9e, riche) |
+| HOME | Aide : l'écran montre ce que fait chaque commande (HOME pour fermer) |
 | SAVE | Delay on/off |
-| FX / LFO / ARP | Kick / Sidechain / Basse |
-| SEQ | Rythme on/off |
+| ARP / SEQ | Tonalité - / + |
 | PLAY | Latch |
 | OCT- / OCT+ | Octave |
 | REC | Libre (futur LOOP) |
+
+L'écran est un aquarium : un poisson-globe nage vers l'accord joué (gauche/droite = la touche, haut/bas = la hauteur, avec le glide), gonfle et sort ses piques sur chaque coup du rythme, se fait écraser par le sidechain, bat de la queue au tempo. Cutoff = eau claire ou trouble, reverb = bulles, delay = échos du poisson, variation = il rougit.
 
 Les réglages se sauvent tout seuls 4 secondes après le dernier changement, quand aucun accord ne joue.
 

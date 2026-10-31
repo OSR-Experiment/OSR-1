@@ -106,7 +106,7 @@ h1 span{color:var(--accent)}
   <section class="notes">
     <div><h2>Jouer</h2><p>Les 27 touches jouent la grille&nbsp;: même nom de note, même accord, une octave plus bas sous le Do4 et plus haut au-dessus du Do5. Touches blanches = accords sûrs, noires = épices. Clavier ordi&nbsp;: rangée <kbd data-code="KeyA">A</kbd> à <kbd data-code="KeyK">K</kbd>, <kbd>Espace</kbd> variation.</p></div>
     <div><h2>Molettes</h2><p>Glisser vers le haut ou le bas, ou la molette de la souris. Un geste rapide va plus loin. Les réglages se sauvent tout seuls quelques secondes après le dernier changement.</p></div>
-    <div><h2>Raccourcis</h2><p><kbd data-code="KeyB">B</kbd>/<kbd data-code="KeyN">N</kbd> grille, <kbd data-code="KeyZ">Z</kbd>/<kbd data-code="KeyX">X</kbd> son, <kbd data-code="KeyC">C</kbd>/<kbd data-code="KeyV">V</kbd> rythme, <kbd data-code="KeyR">R</kbd> rythme on/off, <kbd data-code="KeyO">O</kbd> kick, <kbd data-code="KeyP">P</kbd> sidechain, <kbd data-code="KeyQ">Q</kbd> basse, <kbd data-code="KeyL">L</kbd> latch.</p></div>
+    <div><h2>Raccourcis</h2><p><kbd data-code="KeyB">B</kbd>/<kbd data-code="KeyN">N</kbd> grille, <kbd data-code="KeyZ">Z</kbd>/<kbd data-code="KeyX">X</kbd> son, <kbd data-code="KeyC">C</kbd>/<kbd data-code="KeyV">V</kbd> rythme, <kbd data-code="KeyR">R</kbd> aide, <kbd data-code="KeyO">O</kbd> kick, <kbd data-code="KeyP">P</kbd> sidechain, <kbd data-code="KeyQ">Q</kbd> basse, <kbd data-code="KeyL">L</kbd> latch.</p></div>
   </section>
 </main>
 
@@ -117,21 +117,21 @@ const $ = (id) => document.getElementById(id);
 
 /* the firmware's controls (plat.h order) and what OSR-1 does with them */
 const ENC = [
-  {role:2, dev:'PRESET', fn:'Grille'},
+  {role:2, dev:'PRESET', fn:'Son'},
   {role:1, dev:'ALGO', fn:'Rythme'},
-  {role:0, dev:'SELECT', fn:'Son'},
+  {role:0, dev:'SELECT', fn:'Grille'},
   {role:3, dev:'K1', fn:'Cutoff'},
   {role:4, dev:'K2', fn:'Glide'},
   {role:5, dev:'K3', fn:'Reverb'},
   {role:6, dev:'K4', fn:'BPM'},
 ];
 const B = {FX:0, SEL:1, ENV:2, LFO:3, EDIT:4, GLO:5, HOME:6, SAVE:7, ARP:8, SEQ:9, PLAY:10, REC:11, OCTDN:12, OCTUP:13};
-const BTN = [
-  {b:B.ENV, dev:'ENV', fn:'VARIATION'}, {b:B.SEQ, dev:'SEQ', fn:'RYTHME'}, {b:B.FX, dev:'FX', fn:'KICK'},
-  {b:B.LFO, dev:'LFO', fn:'SIDE'}, {b:B.ARP, dev:'ARP', fn:'BASSE'}, {b:B.SAVE, dev:'SAVE', fn:'DELAY'},
-  {b:B.PLAY, dev:'PLAY', fn:'LATCH'}, {b:B.SEL, dev:'SEL', fn:'RICHESSE'}, {b:B.EDIT, dev:'EDIT', fn:'VOICING'},
-  {b:B.GLO, dev:'GLO', fn:'TONALITÉ -'}, {b:B.HOME, dev:'HOME', fn:'TONALITÉ +'}, {b:B.OCTDN, dev:'OCT-', fn:'OCTAVE -'},
-  {b:B.OCTUP, dev:'OCT+', fn:'OCTAVE +'}, {b:B.REC, dev:'REC', fn:'libre', free:true},
+const BTN = [   /* the panel's order: top row, bottom row */
+  {b:B.FX, dev:'FX', fn:'KICK'}, {b:B.SEL, dev:'SCL', fn:'SIDECHAIN'}, {b:B.ENV, dev:'ENV', fn:'VARIATION'},
+  {b:B.LFO, dev:'LFO', fn:'BASSE'}, {b:B.EDIT, dev:'EDIT', fn:'VOICING'}, {b:B.GLO, dev:'GLO', fn:'RICHESSE'},
+  {b:B.HOME, dev:'HOME', fn:'AIDE'}, {b:B.SAVE, dev:'SAVE', fn:'DELAY'}, {b:B.ARP, dev:'ARP', fn:'TONALITÉ -'},
+  {b:B.SEQ, dev:'SEQ', fn:'TONALITÉ +'}, {b:B.PLAY, dev:'PLAY', fn:'LATCH'}, {b:B.REC, dev:'REC', fn:'libre', free:true},
+  {b:B.OCTDN, dev:'OCT-', fn:'OCTAVE -'}, {b:B.OCTUP, dev:'OCT+', fn:'OCTAVE +'},
 ];
 /* 27 keys F3..G5; chord keys C4..C5 = 7..19; B3 (6) = variation */
 const NOTE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -207,9 +207,9 @@ document.addEventListener('keydown', (ev) => {
   if (ev.repeat) { if (pi >= 0 || c === 'Space') ev.preventDefault(); return; }
   if (pi >= 0) { ev.preventDefault(); start(); setKey(7 + pi, true); return; }
   if (c === 'Space') { ev.preventDefault(); start(); setButton(B.ENV, true); return; }
-  const encs = {KeyB:[2,-1], KeyN:[2,1], KeyZ:[0,-1], KeyX:[0,1], KeyC:[1,-1], KeyV:[1,1]};
+  const encs = {KeyB:[0,-1], KeyN:[0,1], KeyZ:[2,-1], KeyX:[2,1], KeyC:[1,-1], KeyV:[1,1]};
   if (encs[c]) { start(); send({type:'enc', role:encs[c][0], n:encs[c][1]}); return; }
-  const btns = {KeyR:B.SEQ, KeyO:B.FX, KeyP:B.LFO, KeyQ:B.ARP, KeyL:B.PLAY};
+  const btns = {KeyR:B.HOME, KeyO:B.FX, KeyP:B.SEL, KeyQ:B.LFO, KeyL:B.PLAY};
   if (btns[c] !== undefined) { start(); setButton(btns[c], true); setTimeout(() => setButton(btns[c], false), 60); }
 });
 document.addEventListener('keyup', (ev) => {
