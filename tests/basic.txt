@@ -2,10 +2,12 @@
 #   tools/build.py /path/to/osr1 --host, then osr1/build/host/osr1_host osr1/tests/basic.txt osr1/build/host
 wait 600
 shot boot.png
-expect grid 0
-expect active 0
+# first start: no drums, no FX, a light reverb
+expect drums 0
+expect delay 0
+expect reverb 22
 expect page 0
-# a chord: C4 is key 7 (the grid's first white key)
+# rhythm OFF: the chord plays only while the key is down
 key 7 down
 wait 40
 expect active 1
@@ -17,58 +19,55 @@ shot chord.png
 key 7 up
 wait 30
 expect active 0
-# another grid, a rhythm, the drums (kick + sidechain)
+# a grid, a rhythm: the chord keeps playing (latch); the drums from the main page's K4
 turn SELECT 2
 wait 30
 expect grid 2
 turn ALGO 7
 wait 30
 expect rhythm 7
-tap PLAY
+turn K4 1
+wait 150
+turn K4 1
+wait 150
+turn K4 1
+wait 150
+turn K4 1
+wait 150
+turn K4 1
 wait 30
-expect drums 1
-tap ARP
+expect drums 15
+turn K4 12
+wait 30
 key 9 down
 wait 20
 key 9 up
-wait 20
+wait 40
 expect active 1
-expect latch 1
 wav rhythm_drums.wav
 wait 1000
-shot home.png
+shot main.png
 wait 117
 shot kick.png
 wait 1883
 wavstop
-# change chords while the rhythm plays (no glide: the quick fade)
+# the same key again: stop; another key: plays
+key 9 down
+wait 20
+key 9 up
+wait 30
+expect active 0
 key 12 down
-wait 400
+wait 20
 key 12 up
-key 14 down
 wait 400
+key 14 down
+wait 20
 key 14 up
-# variation (LFO held)
-press LFO
-wait 60
-expect variation 1
-shot variation.png
-release LFO
 wait 30
-expect variation 0
-# every key plays: F3 (key 0) and G5 (key 26)
-key 0 down
-wait 30
-expect chord 0
-key 0 up
-key 26 down
-wait 30
-expect chord 26
-key 26 up
-# pages: K1..K4 follow the page
-turn K1 -1
-wait 30
-expect cutoff 69
+expect active 1
+expect chord 14
+# pages: a page button, the same again = back to the main page
 tap FX
 wait 30
 expect page 1
@@ -76,6 +75,9 @@ turn K1 1
 wait 30
 expect delay 3
 shot fx.png
+tap FX
+wait 30
+expect page 0
 tap SEL
 wait 30
 expect page 2
@@ -85,21 +87,22 @@ expect key 1
 turn K1 -1
 wait 30
 expect key 0
-turn K3 1
-wait 30
-expect rich 2
 tap ENV
 wait 60
+expect page 3
 turn K1 1
 wait 30
 expect bpm 119
 shot groove.png
 tap GLO
 wait 60
+expect page 6
+turn K1 1
+wait 400
 shot drums.png
-tap SEQ
+tap LFO
 wait 30
-expect page 5
+expect page 4
 turn K1 1
 wait 30
 expect bsound 3
@@ -109,43 +112,104 @@ wav bass_acid.wav
 wait 1500
 wavstop
 shot bass.png
-# decor: the four creatures, the four backgrounds
+# decor: the eight creatures, the eight backgrounds, eye shapes, accessories
 tap EDIT
 wait 30
-expect page 6
+expect page 5
+turn K1 1
+turn K2 1
+turn K3 1
+turn K4 1
+wait 80
+shot c1.png
+turn K1 1
+turn K2 1
+turn K3 1
+turn K4 1
+wait 80
+shot c2.png
+turn K1 1
+turn K2 1
+turn K3 1
+turn K4 1
+wait 80
+shot c3.png
+turn K1 1
+turn K2 1
+turn K3 1
+turn K4 1
+wait 80
+shot c4.png
+turn K1 1
+turn K2 1
+turn K3 1
+turn K4 1
+wait 80
+shot c5.png
 turn K1 1
 turn K3 1
+turn K4 -4
 wait 80
-shot lune_bleu.png
+shot c6.png
 turn K1 1
+turn K2 -5
 turn K3 1
+turn K4 2
 wait 80
-shot meduse_braise.png
-turn K1 1
-turn K3 1
-wait 80
-shot etoile_acide.png
-expect creature 3
-turn K1 -3
-turn K3 -3
+shot c7.png
+expect creature 7
+turn K1 -7
+turn K2 -5
+turn K3 -7
+turn K4 -5
 wait 30
+# the bottom row: bowl, food, light, party, pirouette, knock
+tap HOME
+wait 900
+expect bowl 1
+shot bowl.png
+tap HOME
+wait 600
+expect bowl 0
+tap REC
+wait 700
+shot food.png
+wait 2500
+shot food2.png
+tap ARP
+wait 500
+expect dark 1
+shot dark.png
+tap ARP
+wait 30
+tap PLAY
+wait 600
+expect party 1
+shot party.png
+tap PLAY
+wait 30
+tap SEQ
+wait 300
+shot pirouette.png
+tap SAVE
+wait 150
+shot knock.png
 # HOME held: the help screen
 press HOME
 wait 900
 expect help 1
-expect page 0
 shot help.png
 release HOME
 wait 80
 expect help 0
-# latch off, drums off: the chord stops, it sleeps
-tap ARP
+expect bowl 0
+# stop, back to no rhythm: it sleeps
+key 14 down
+wait 20
+key 14 up
 wait 30
-expect latch 0
 expect active 0
-tap PLAY
-wait 30
-expect drums 0
+turn ALGO -7
 wait 300
 shot sleep.png
 # sounds: a pluck with strum, an FM key
@@ -154,8 +218,7 @@ wait 30
 expect sound 18
 tap SEL
 turn K4 10
-tap HOME
-turn ALGO -7
+tap SEL
 key 7 down
 wait 20
 wav pluck_strum.wav

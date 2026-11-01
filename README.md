@@ -14,28 +14,27 @@ Une seule fonction par commande, sans touche shift.
 | --- | --- |
 | Les 27 touches | Accords de la grille : même nom de note, même accord (Do5 = 8e accord). Blanches = sûrs, noires = épices. Sous le Do4 une octave plus bas, au-dessus du Do5 une octave plus haut |
 | SELECT | Grille d'accords (38) |
-| ALGORITHM | Rythme des accords (16, OFF = accord tenu) |
+| ALGORITHM | Rythme des accords (16). OFF : l'accord sonne tant que la touche est enfoncée. Avec un rythme, l'accord continue (latch) : retaper la même touche l'arrête |
 | PRESET | Son (32, la famille s'affiche) |
-| K1 / K2 / K3 / K4 | Les 4 réglages de la page en cours, toujours affichés en bas de l'écran |
-| HOME | Page HOME : cutoff, glide, résonance, sidechain. Tenu : l'écran d'aide |
-| FX | Page FX : delay, tremolo, cassette (wow, flutter, saturation), reverb |
+| K1 / K2 / K3 / K4 | Les 4 réglages de la page en cours, toujours affichés en bas de l'écran. Page principale : cutoff, glide, longueur des notes, batterie (niveau ; 0 = pas de batterie) |
+| FX | Page FX : delay, tremolo, chorus, reverb |
 | SCL | Page ACCORDS : tonalité, voicing, richesse, strum |
-| ENV | Page GROOVE : BPM, swing, densité (moins / plus de coups), gate |
-| GLO | Page BATTERIE : pattern (10, minimalistes), kick, hi-hat, rim |
-| SEQ | Page BASSE : son (off, sub, rond, acid, reese, pluck, FM), niveau, motif (8), filtre |
-| EDIT | Page DÉCOR : bestiole (globe, lune, méduse, étoile), yeux, fond (moiré, bleu, braise, acide), humeur |
-| PLAY | Batterie on/off (le kick pompe le sidechain) |
-| ARP | Latch |
-| LFO (tenir) | Variation : version sus, basse sur la quinte |
+| ENV | Page GROOVE : BPM, swing, densité (moins / plus de coups), sidechain on/off |
+| LFO | Page BASSE : son (off, sub, rond, acid, reese, pluck, FM), niveau, motif (8), filtre |
+| EDIT | Page DÉCOR : bestiole (8), forme des yeux (6), fond (8), accessoire (6) |
+| GLO | Page BATTERIE : pattern (10, chacun avec son kit), kick, hi-hat, rim |
+| (rappuyer sur une page) | Retour à la page principale |
+| HOME | Recul : la bestiole dans son bocal, la musique entendue depuis l'extérieur. Tenu : l'aide |
+| SAVE / ARP / SEQ / PLAY / REC | Toquer sur la vitre / la lampe / une pirouette / mode fête / nourrir |
 | OCT- / OCT+ | Octave |
-| SAVE / REC | Libres |
+
+Au premier démarrage : pas de batterie, pas d'effets, une légère reverb. Le sidechain (ON par défaut) pompe sur les
+kicks du pattern dès que la batterie est au-dessus de 0, même si le kick lui-même est à 0.
 
 L'écran : une bestiole noire aux yeux lumineux, vue comme une photo d'écran en gros plan (grille de pixels, moiré).
 Elle nage vers l'accord (gauche/droite = la touche, haut/bas = la hauteur, avec le glide), gonfle sur les coups du
 rythme, se fait écraser par le sidechain, chaque kick envoie une onde. L'eau change de couleur avec les accords.
-Cutoff = eau claire ou sombre, reverb = points lumineux, delay = échos, tremolo = l'image pulse, cassette = l'image
-ondule. En humeur AUTO : elle dort quand rien ne joue, boude quand seule la batterie joue, est surprise sur les
-accents, heureuse sur la variation.
+Cutoff = eau claire ou sombre, reverb = points lumineux, delay = échos. Elle dort quand rien ne joue.
 
 Les réglages se sauvent tout seuls 4 secondes après le dernier changement, quand aucun accord ne joue.
 
