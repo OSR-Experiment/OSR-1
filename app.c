@@ -1,32 +1,42 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records) */
-/* OSR-1 app: input, chord grids, the screen, settings. Part of the unity build (device/unity.c,
+/* OSR-1 app: input, pages, chord grids, the screen, settings. Part of the unity build (device/unity.c,
  * host/plat_host.c), after the platform: gfx.c and announce.c are in scope. The sound is dsp/engine.c.
  *
- * Controls: one action per control, no shift layer
+ * Controls: one action per control
  *   all 27 keys     chords of the grid (same note name, same chord; C5 = the grid's 8th chord),
  *                   white keys safe, black keys spices; below C4 an octave down, above C5 an octave up
- *   SELECT grid   ALGORITHM rhythm (TENU = no rhythm)   PRESET sound (all 32, family shown)
- *   K1 cutoff   K2 glide   K3 reverb   K4 BPM            (fast turns move further)
- *   top row:     FX kick   SCL sidechain   ENV variation (hold)   LFO bass   EDIT voicing   GLO richness
- *   bottom row:  HOME help   SAVE delay   ARP key -   SEQ key +   PLAY latch   REC free
- *   OCT- / OCT+ octave
- *   Settings save themselves a few seconds after the last change. */
+ *   SELECT grid   ALGORITHM rhythm (OFF = the chord held)   PRESET sound
+ *   K1..K4          the page's four settings, always shown at the bottom of the screen
+ *   page buttons    HOME  cutoff, glide, resonance, sidechain      (HOME held: the help screen)
+ *                   FX    delay, tremolo, tape, reverb
+ *                   SCL   chords: key, voicing, richness, strum
+ *                   ENV   groove: BPM, swing, density, gate
+ *                   GLO   drums: pattern, kick, hi-hat, rim
+ *                   SEQ   bass: sound, level, motif, filter
+ *                   EDIT  decor: creature, eyes, background, mood
+ *   ARP latch   PLAY drums on/off (kick, and its sidechain)   LFO (hold) variation   OCT- / OCT+ octave
+ *   SAVE, REC free.  Settings save themselves a few seconds after the last change. */
 #include "fastmath.h"
 #include "engine.h"
 #include "data.h"
+#include "patterns.h"
 
 /* ------------------------------------------------------------------ settings --- */
-#define SET_MAGIC 0x4F535232u            /* "OSR2" (v2 layout) */
+#define SET_MAGIC 0x4F535233u            /* "OSR3" (v3 layout: pages) */
 typedef struct {
     uint32_t magic;
     uint8_t grid, key, rich, voicing;
     int8_t octave;
-    uint8_t sound, rhythm, rhythm_on;   /* rhythm_on: unused (TENU is the no-rhythm setting), kept for the layout */
-    uint8_t kick, side, bass_on, latch;
-    uint8_t glide, cutoff, reso, reverb, delay, bpm;   /* knobs: 0..100 (glide in 1/100 of 1.5 s, bpm 70..160) */
-    uint8_t delay_on;
-    uint8_t rsv[1];
+    uint8_t sound, rhythm, latch, drums_on, page;
+    uint8_t cutoff, glide, reso, side;          /* HOME */
+    uint8_t delay, trem, tape, reverb;          /* FX */
+    uint8_t strum;                              /* chords (with key, voicing, richness) */
+    uint8_t bpm, swing, dens, gate;             /* groove (density: 50 = as written) */
+    uint8_t dpat, dkick, dhat, drim;            /* drums */
+    uint8_t bsound, blevel, bmotif, bcut;       /* bass */
+    uint8_t creature, eyes, decor, mood;        /* decor */
+    uint8_t rsv[3];
 } settings_t;
 static settings_t set;
 static uint8_t set_dirty;
@@ -36,15 +46,13 @@ static void settings_defaults(void)
 {
     memset(&set, 0, sizeof set);
     set.magic = SET_MAGIC;
-    set.rich = 0;
-    set.bass_on = 1;
-    set.glide = 17;                      /* 0.25 s */
-    set.cutoff = 72;
-    set.reso = 20;
-    set.reverb = 45;
-    set.delay = 30;
-    set.delay_on = 0;
-    set.bpm = 118;
+    set.cutoff = 72; set.glide = 17; set.reso = 20; set.side = 55;
+    set.delay = 0; set.trem = 0; set.tape = 0; set.reverb = 45;
+    set.strum = 0;
+    set.bpm = 118; set.swing = 0; set.dens = 50; set.gate = 50;
+    set.dpat = 1; set.dkick = 75; set.dhat = 30; set.drim = 25;
+    set.bsound = BASS_ROND; set.blevel = 60; set.bmotif = MOTIF_SUIT; set.bcut = 45;
+    set.creature = 0; set.eyes = 0; set.decor = 0; set.mood = MOOD_AUTO;
 }
 
 static float glide_s(void) { return set.glide < 1u ? 0.0f : (float)set.glide * 0.015f; }
@@ -253,9 +261,31 @@ static void send_rhythm(void)
 }
 static void send_params(void)
 {
-    eng_params((float)set.bpm, cutoff_hz(), reso_q(), set.kick, set.side, set.bass_on);
+    eng_params((float)set.bpm, cutoff_hz(), reso_q(), (float)set.side * 0.01f, set.drums_on);
 }
-static void send_fx(void) { eng_fx((float)set.reverb * 0.01f, set.delay_on ? (float)set.delay * 0.01f : 0.0f); }
+static void send_fx(void)
+{
+    eng_fx((float)set.reverb * 0.01f, (float)set.delay * 0.01f, (float)set.trem * 0.01f, (float)set.tape * 0.01f);
+}
+static void send_groove(void)
+{
+    eng_groove((float)set.swing * 0.01f, ((float)set.dens - 50.0f) * 0.02f, (float)set.gate * 0.01f,
+               (float)set.strum * 0.01f);
+}
+static float drum_v(char c) { return c == 'X' ? 1.0f : (c == 'x' || c == 'o') ? 0.6f : 0.0f; }
+static void send_drums(void)
+{
+    drums_t d;
+    int i;
+    for (i = 0; i < 16; i++) {
+        d.k[i] = drum_v(DRUM_DEF[set.dpat].k[i]);
+        d.h[i] = drum_v(DRUM_DEF[set.dpat].h[i]);
+        d.r[i] = drum_v(DRUM_DEF[set.dpat].r[i]);
+        d.open[i] = DRUM_DEF[set.dpat].h[i] == 'o';
+    }
+    eng_drums(&d, (float)set.dkick * 0.01f, (float)set.dhat * 0.01f, (float)set.drim * 0.01f);
+}
+static void send_bass(void) { eng_bass(set.bsound, set.bmotif, (float)set.blevel * 0.01f, (float)set.bcut * 0.01f); }
 
 /* ------------------------------------------------------------------ playing --- */
 static int cur_idx = -1, held_idx = -1, active;
@@ -300,6 +330,52 @@ static void stop(void)
 
 static void rechord(void) { if (active && cur_idx >= 0) play(cur_idx); }
 
+/* ------------------------------------------------------------------ pages --- */
+enum { PG_HOME, PG_FX, PG_ACC, PG_GROOVE, PG_DRUMS, PG_BASS, PG_DECOR, NPAGE };
+static const char *const PAGE_NAME[NPAGE] = {"HOME", "FX", "ACCORDS", "GROOVE", "BATTERIE", "BASSE", "DECOR"};
+static const uint8_t PAGE_BTN[NPAGE] = {B_HOME, B_FX, B_SEL, B_ENV, B_GLO, B_SEQ, B_EDIT};
+static const uint8_t PAGE_RGB[NPAGE][3] = {{255, 150, 220}, {190, 150, 255}, {120, 230, 255}, {255, 214, 110},
+                                          {255, 140, 100}, {140, 240, 150}, {235, 235, 240}};
+
+enum { KD_PCT, KD_OFF, KD_GLIDE, KD_BPM, KD_BIP, KD_LIST };
+enum { G_NONE, G_PARAMS, G_FX, G_GROOVE, G_DRUMS, G_BASS, G_CHORD };
+typedef struct {
+    const char *lab;
+    uint8_t *v;
+    uint8_t lo, hi, kind, grp;
+    const char *const *names;
+} kdef_t;
+static const kdef_t KD[NPAGE][4] = {
+    {{"CUTOFF", &set.cutoff, 0, 100, KD_PCT, G_PARAMS, 0}, {"GLIDE", &set.glide, 0, 100, KD_GLIDE, G_NONE, 0},
+     {"RESO", &set.reso, 0, 100, KD_PCT, G_PARAMS, 0}, {"SIDECHAIN", &set.side, 0, 100, KD_OFF, G_PARAMS, 0}},
+    {{"DELAY", &set.delay, 0, 100, KD_OFF, G_FX, 0}, {"TREMOLO", &set.trem, 0, 100, KD_OFF, G_FX, 0},
+     {"CASSETTE", &set.tape, 0, 100, KD_OFF, G_FX, 0}, {"REVERB", &set.reverb, 0, 100, KD_PCT, G_FX, 0}},
+    {{"TONALITE", &set.key, 0, 11, KD_LIST, G_CHORD, NOTE}, {"VOICING", &set.voicing, 0, 2, KD_LIST, G_CHORD, VOICING_NAME},
+     {"RICHESSE", &set.rich, 0, 3, KD_LIST, G_CHORD, RICH_NAME}, {"STRUM", &set.strum, 0, 100, KD_OFF, G_GROOVE, 0}},
+    {{"BPM", &set.bpm, 70, 160, KD_BPM, G_PARAMS, 0}, {"SWING", &set.swing, 0, 100, KD_OFF, G_GROOVE, 0},
+     {"DENSITE", &set.dens, 0, 100, KD_BIP, G_GROOVE, 0}, {"GATE", &set.gate, 0, 100, KD_PCT, G_GROOVE, 0}},
+    {{"PATTERN", &set.dpat, 0, NDRUM - 1, KD_LIST, G_DRUMS, DRUM_NAME}, {"KICK", &set.dkick, 0, 100, KD_OFF, G_DRUMS, 0},
+     {"HI-HAT", &set.dhat, 0, 100, KD_OFF, G_DRUMS, 0}, {"RIM", &set.drim, 0, 100, KD_OFF, G_DRUMS, 0}},
+    {{"SON", &set.bsound, 0, NBASS_SOUND - 1, KD_LIST, G_BASS, BASS_NAME}, {"NIVEAU", &set.blevel, 0, 100, KD_PCT, G_BASS, 0},
+     {"MOTIF", &set.bmotif, 0, NMOTIF - 1, KD_LIST, G_BASS, MOTIF_NAME}, {"FILTRE", &set.bcut, 0, 100, KD_PCT, G_BASS, 0}},
+    {{"BESTIOLE", &set.creature, 0, NCREATURE - 1, KD_LIST, G_NONE, CREATURE_NAME},
+     {"YEUX", &set.eyes, 0, NEYE - 1, KD_LIST, G_NONE, EYE_NAME},
+     {"DECOR", &set.decor, 0, NDECOR - 1, KD_LIST, G_NONE, DECOR_NAME},
+     {"HUMEUR", &set.mood, 0, NMOOD - 1, KD_LIST, G_NONE, MOOD_NAME}},
+};
+
+static int settings_ok(void)
+{
+    int p, k;
+    if (set.magic != SET_MAGIC || set.grid >= NGRID || set.octave < -2 || set.octave > 2 || set.sound >= NFAMILY * PER_FAMILY
+        || set.rhythm >= NRHYTHM || set.page >= NPAGE || set.latch > 1u || set.drums_on > 1u)
+        return 0;
+    for (p = 0; p < NPAGE; p++)
+        for (k = 0; k < 4; k++)
+            if (*KD[p][k].v < KD[p][k].lo || *KD[p][k].v > KD[p][k].hi) return 0;
+    return 1;
+}
+
 /* ------------------------------------------------------------------ platform contract --- */
 void app_init(void)
 {
@@ -308,16 +384,17 @@ void app_init(void)
         parse_chords(GRID_DEF[g].white, grid_w[g], 8);
         parse_chords(GRID_DEF[g].black, grid_b[g], 5);
     }
-    if (plat_store_load(OBJ_SETTINGS, &set, sizeof set) != (int)sizeof set || set.magic != SET_MAGIC
-        || set.grid >= NGRID || set.key > 11u || set.rich > 3u || set.voicing > 2u || set.octave < -2
-        || set.octave > 2 || set.sound >= NFAMILY * PER_FAMILY || set.rhythm >= NRHYTHM || set.bpm < 70u
-        || set.bpm > 160u || set.delay_on > 1u)
+    if (plat_store_load(OBJ_SETTINGS, &set, sizeof set) != (int)sizeof set || !settings_ok())
         settings_defaults();
+    set.latch = 0;
     eng_init();
     send_sound();
     send_rhythm();
-    send_params();
+    send_groove();
+    send_drums();
+    send_bass();
     send_fx();
+    send_params();
 }
 
 void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
@@ -332,14 +409,9 @@ static struct {
     char msg[2][24];
     uint32_t msg_until;
     uint32_t keys, btn;
-    uint8_t redraw_top, redraw_bottom;
-    uint32_t trail_at;
-    int last_step;
-    uint32_t step_at, kick_at;
+    uint32_t frame_at, home_at;
+    uint8_t help, help_drawn;
 } ui;
-
-static uint8_t help_on, help_drawn;     /* HOME: the help screen */
-static void ui_redraw_all(void) { ui.redraw_top = ui.redraw_bottom = 1; }
 
 static void int_text(int32_t v, char *b)
 {
@@ -361,7 +433,6 @@ void app_say(const char *a, const char *b)
     for (i = 0; i < 23u && b && b[i]; i++) ui.msg[1][i] = b[i];
     ui.msg[1][i] = 0;
     ui.msg_until = plat_ms() + 1300u;
-    ui.redraw_top = 1;
     if (ann_on()) {
         t[0] = 0;
         text_cat(t, ui.msg[0]);
@@ -371,23 +442,7 @@ void app_say(const char *a, const char *b)
     }
 }
 
-static void say_pct(const char *what, uint8_t v)
-{
-    char t[12];
-    int_text(v, t);
-    text_cat(t, "%");
-    app_say(what, t);
-}
-
-static void dirty(void) { set_dirty = 1; dirty_at = plat_ms(); ui.redraw_top = ui.redraw_bottom = 1; }
-
-static int step_u8(uint8_t *v, int32_t d, int lo, int hi)
-{
-    int32_t n = clamp((int32_t)*v + d, lo, hi);
-    if (n == *v) return 0;
-    *v = (uint8_t)n;
-    return 1;
-}
+static void dirty(void) { set_dirty = 1; dirty_at = plat_ms(); }
 
 static void wrap_u8(uint8_t *v, int32_t d, int n) { *v = (uint8_t)(((int32_t)*v + d % n + n) % n); }
 
@@ -402,68 +457,101 @@ static int32_t accel(int k, int32_t e)
     return e;
 }
 
+/* a knob's value as text, and as 0..1 for its bar */
+static float knob_text(const kdef_t *d, char *b)
+{
+    int v = *d->v;
+    float f = (float)(v - d->lo) / (float)(d->hi - d->lo);
+    switch (d->kind) {
+    case KD_LIST: b[0] = 0; text_cat(b, d->names[v]); break;
+    case KD_BPM: int_text(v, b); break;
+    case KD_GLIDE:
+        if (v < 1) { b[0] = 0; text_cat(b, "OFF"); }
+        else { int_text(v * 15, b); text_cat(b, " MS"); }
+        break;
+    case KD_BIP:
+        if (v == 50) { b[0] = 0; text_cat(b, "0"); }
+        else { if (v > 50) { b[0] = '+'; b[1] = 0; } else b[0] = 0; int_text((v - 50) * 2, b + (v > 50)); text_cat(b, "%"); }
+        break;
+    case KD_OFF:
+        if (v == 0) { b[0] = 0; text_cat(b, "OFF"); break; }
+        /* fall through */
+    default: int_text(v, b); text_cat(b, "%"); break;
+    }
+    return f;
+}
+
+static void apply_group(int g)
+{
+    switch (g) {
+    case G_PARAMS: send_params(); break;
+    case G_FX: send_fx(); break;
+    case G_GROOVE: send_groove(); break;
+    case G_DRUMS: send_drums(); break;
+    case G_BASS: send_bass(); break;
+    case G_CHORD: rechord(); break;
+    default: break;
+    }
+}
+
+static void knob(int k, int32_t e)
+{
+    const kdef_t *d = &KD[set.page][k];
+    int32_t step = d->kind == KD_LIST ? e : d->kind == KD_BPM ? accel(EN_K1 + k, e) : accel(EN_K1 + k, e) * 3;
+    int32_t n = clamp((int32_t)*d->v + step, d->lo, d->hi);
+    if (n == *d->v) return;
+    *d->v = (uint8_t)n;
+    apply_group(d->grp);
+    dirty();
+}
+
 static void encoder(int k, int32_t e)
 {
-    char t[24];
     switch (k) {
     case EN_SELECT:
         wrap_u8(&set.grid, e, NGRID); set.rich = GRID_DEF[set.grid].rich; app_say("GRILLE", GRID_DEF[set.grid].name);
         rechord();
         break;
-    case EN_ALGO: wrap_u8(&set.rhythm, e, NRHYTHM); app_say("RYTHME", RHYTHM_NAME[set.rhythm]); send_rhythm(); break;
+    case EN_ALGO:
+        wrap_u8(&set.rhythm, e, NRHYTHM);
+        app_say("RYTHME", set.rhythm ? RHYTHM_NAME[set.rhythm] : "OFF");
+        send_rhythm();
+        break;
     case EN_PRESET:
         wrap_u8(&set.sound, e, NFAMILY * PER_FAMILY);
         app_say(FAMILY_NAME[set.sound / PER_FAMILY], SOUND_NAME[set.sound]);
         send_sound();
         break;
-    case EN_K1:
-        step_u8(&set.cutoff, accel(k, e) * 3, 0, 100);
-        int_text((int32_t)cutoff_hz(), t); text_cat(t, " HZ"); app_say("CUTOFF", t);
-        send_params();
-        break;
-    case EN_K2:
-        step_u8(&set.glide, accel(k, e) * 3, 0, 100);
-        if (set.glide < 1u) app_say("GLIDE", "OFF");
-        else { int_text((int32_t)(set.glide * 15u), t); text_cat(t, " MS"); app_say("GLIDE", t); }
-        break;
-    case EN_K3: step_u8(&set.reverb, accel(k, e) * 3, 0, 100); say_pct("REVERB", set.reverb); send_fx(); break;
-    case EN_K4: step_u8(&set.bpm, accel(k, e), 70, 160); int_text(set.bpm, t); app_say("BPM", t); send_params(); break;
-    default: break;
+    case EN_K1: case EN_K2: case EN_K3: case EN_K4: knob(k - EN_K1, e); return;
+    default: return;
     }
     dirty();
 }
-
 
 static void set_variation(int on)
 {
     if (variation == on) return;
     variation = (uint8_t)on;
     rechord();
-    ui.redraw_top = 1;
 }
 
 static void button(int k)
 {
     char t[8];
+    int p;
+    for (p = 0; p < NPAGE; p++)
+        if (PAGE_BTN[p] == k) {
+            if (k == B_HOME) ui.home_at = plat_ms();
+            if (set.page != p) { set.page = (uint8_t)p; dirty(); }
+            return;
+        }
     switch (k) {
-    case B_HOME: help_on ^= 1u; help_drawn = 0; if (!help_on) ui_redraw_all(); return;
-    case B_FX: set.kick ^= 1u; send_params(); app_say("KICK", set.kick ? "ON" : "OFF"); break;
-    case B_SEL: set.side ^= 1u; send_params(); app_say("SIDECHAIN", set.side ? "ON" : "OFF"); break;
-    case B_LFO: set.bass_on ^= 1u; send_params(); app_say("BASSE", set.bass_on ? "ON" : "OFF"); break;
-    case B_SAVE: set.delay_on ^= 1u; send_fx(); app_say("DELAY", set.delay_on ? "ON" : "OFF"); break;
-    case B_GLO: wrap_u8(&set.rich, 1, 4); app_say("RICHESSE", RICH_NAME[set.rich]); rechord(); break;
-    case B_EDIT: wrap_u8(&set.voicing, 1, 3); app_say("VOICING", VOICING_NAME[set.voicing]); rechord(); break;
     case B_ARP:
-    case B_SEQ:
-        wrap_u8(&set.key, k == B_SEQ ? 1 : -1, 12);
-        app_say("TONALITE", NOTE[set.key]);
-        rechord();
-        break;
-    case B_PLAY:
         set.latch ^= 1u;
         if (!set.latch && held_idx < 0 && active) stop();
         app_say("LATCH", set.latch ? "ON" : "OFF");
         break;
+    case B_PLAY: set.drums_on ^= 1u; send_params(); app_say("BATTERIE", set.drums_on ? "ON" : "OFF"); break;
     case B_OCTDN:
     case B_OCTUP:
         set.octave = (int8_t)clamp(set.octave + (k == B_OCTUP ? 1 : -1), -2, 2);
@@ -478,21 +566,25 @@ static void button(int k)
 
 static void input(void)
 {
-    uint32_t keys = plat_keys(), btn = plat_buttons(), k, lit_keys = 0, lit_btn = 0;
+    uint32_t keys = plat_keys(), btn = plat_buttons(), k, lit_keys = 0, lit_btn = 0, now = plat_ms();
     int32_t e;
     for (k = 0; k < NKEYS; k++) {
         uint32_t bit = 1u << k;
-        if ((keys & bit) && !(ui.keys & bit)) { held_idx = (int)k; play((int)k); ui.redraw_top = 1; }
+        if ((keys & bit) && !(ui.keys & bit)) { held_idx = (int)k; play((int)k); }
         else if (!(keys & bit) && (ui.keys & bit) && held_idx == (int)k) {
             held_idx = -1;
             if (!set.latch) stop();
-            ui.redraw_top = 1;
         }
     }
-    set_variation((btn >> B_ENV) & 1u);
+    set_variation((btn >> B_LFO) & 1u);
     for (k = 0; k < NB; k++) {
         uint32_t bit = 1u << k;
         if ((btn & bit) && !(ui.btn & bit)) button((int)k);
+    }
+    /* HOME held: the help screen, as long as it is held */
+    {
+        uint8_t h = (btn >> B_HOME) & 1u && now - ui.home_at > 600u;
+        if (h != ui.help) { ui.help = h; ui.help_drawn = 0; }
     }
     for (k = 0; k < NE; k++)
         if ((e = plat_enc((int)k)) != 0)
@@ -504,430 +596,545 @@ static void input(void)
         if (plat_store_save(OBJ_SETTINGS, &set, sizeof set) == 0) set_dirty = 0;
         else dirty_at = plat_ms();
     }
-    /* lights: the keys glow, the one playing is lit; the toggles lit when on */
+    /* lights: the keys glow, the one playing is lit; the page's button; latch, drums, variation */
     if (cur_idx >= 0) lit_keys |= 1u << (uint32_t)cur_idx;
-    if (set.kick) lit_btn |= 1u << B_FX;
-    if (set.side) lit_btn |= 1u << B_SEL;
-    if (set.bass_on) lit_btn |= 1u << B_LFO;
-    if (help_on) lit_btn |= 1u << B_HOME;
-    if (set.delay_on) lit_btn |= 1u << B_SAVE;
-    if (set.latch) lit_btn |= LED_PLAY_GREEN;
-    if (variation) lit_btn |= 1u << B_ENV;
+    lit_btn |= 1u << PAGE_BTN[set.page];
+    if (set.latch) lit_btn |= 1u << B_ARP;
+    if (set.drums_on) lit_btn |= LED_PLAY_GREEN;
+    if (variation) lit_btn |= 1u << B_LFO;
     plat_lights(lit_btn, lit_keys, 0, (1u << NKEYS) - 1u, 1);
 }
 
 void app_input_only(void) { input(); }
 
 /* ------------------------------------------------------------------ screen (240 x 240) --- */
-/* An aquarium. A pufferfish swims to the chord (left/right = the key, up/down = the pitch, gliding
- * with GLIDE), puffs up and bristles on every hit of the rhythm, flinches with the kick (sidechain:
- * it is squashed), flaps its tail to the BPM. CUTOFF clears or clouds the water, REVERB fills it with
- * bubbles, DELAY leaves echoes of the fish behind it, VARIATION makes it blush.
- *   0..48 chord and sound   48..192 the aquarium (one canvas, redrawn at ~30 fps)   192..240 rhythm */
-#define TOP_H 48
-#define AQ_Y 48
-#define AQ_H 144
-#define BOT_Y 192
-#define FLOOR_Y 128                      /* sand, in aquarium rows */
-#define COL_TOP RGB(5, 12, 24)
-#define COL_INK RGB(236, 244, 248)
-#define COL_MUTED RGB(122, 156, 176)
-#define COL_CORAL RGB(255, 140, 96)
-#define COL_AQUA RGB(110, 220, 235)
-#define COL_SAND_BG RGB(22, 19, 16)
-#define COL_SAND_TXT RGB(196, 178, 148)
+/* A creature (black, a bit wobbly, glowing eyes) in water seen like a macro photo of an LCD: the picture is
+ * 80 x 80 big pixels, each drawn as 3 x 3 screen pixels (red, green, blue columns over a dark row).
+ * It swims to the chord (left/right = the key, up/down = the pitch, gliding with GLIDE), puffs up on the
+ * rhythm's hits, is squashed by the sidechain, sends a ripple with each kick. The water changes colour with
+ * the chords. CUTOFF: bright or murky water; REVERB: glowing specks; DELAY: echoes of the creature;
+ * TREMOLO: the picture pulses; TAPE: it wobbles like a VHS. Info on two translucent bands, top and bottom.
+ * Each half (240 x 120) is drawn into the canvas and sent, ~25 times a second. */
+#define NC 80                            /* big pixels a side */
+#define BAND_TOP 13                      /* rows 0..12 under the top band */
+#define BAND_BOT 63                      /* rows 63..79 under the bottom band */
+#define TAU_F 6.2831853f
 
-static uint16_t rgbf(float r, float g, float b)
+static inline float sinr(float x) { return fm_sin_turns(x * 0.15915494f); }
+static inline float frac(float x) { return x - fm_floorf(x); }
+static inline float clamp01(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x; }
+
+/* atan2 in turns (-0.5 .. 0.5) */
+static float at2(float y, float x)
 {
-    int32_t R = clamp((int32_t)r, 0, 255), G = clamp((int32_t)g, 0, 255), B = clamp((int32_t)b, 0, 255);
-    return RGB(R, G, B);
+    float ax = fm_fabsf(x), ay = fm_fabsf(y), mx = fm_maxf(ax, ay), a, s, r;
+    if (mx < 1e-6f) return 0.0f;
+    a = fm_minf(ax, ay) / mx;
+    s = a * a;
+    r = ((-0.0464964749f * s + 0.15931422f) * s - 0.327622764f) * s * a + a;
+    if (ay > ax) r = 1.57079637f - r;
+    if (x < 0.0f) r = 3.14159274f - r;
+    if (y < 0.0f) r = -r;
+    return r * 0.15915494f;
 }
 
-static uint32_t rnd_state = 0x1234567u;
-static float rnd(void)                   /* 0..1 */
+static void hsv(float h, float s, float v, float *o)
 {
-    rnd_state = rnd_state * 1664525u + 1013904223u;
-    return (float)(rnd_state >> 8) * (1.0f / 16777216.0f);
-}
-
-/* filled ellipse, row by row */
-static void disc(float cx, float cy, float rx, float ry, uint16_t c)
-{
-    int32_t y, y0 = (int32_t)(cy - ry), y1 = (int32_t)(cy + ry);
-    if (rx < 0.5f || ry < 0.5f) return;
-    for (y = y0; y <= y1; y++) {
-        float d = ((float)y - cy) / ry, hw;
-        if (d < -1.0f || d > 1.0f) continue;
-        hw = rx * fm_sqrtf(1.0f - d * d);
-        cv_rect((int32_t)(cx - hw + 0.5f), y, (int32_t)(2.0f * hw + 1.0f), 1, c);
+    float hh = frac(h) * 6.0f, f, p, q, t;
+    int i = (int)hh;
+    f = hh - (float)i;
+    p = v * (1.0f - s); q = v * (1.0f - f * s); t = v * (1.0f - (1.0f - f) * s);
+    switch (i) {
+    case 0: o[0] = v; o[1] = t; o[2] = p; break;
+    case 1: o[0] = q; o[1] = v; o[2] = p; break;
+    case 2: o[0] = p; o[1] = v; o[2] = t; break;
+    case 3: o[0] = p; o[1] = q; o[2] = v; break;
+    case 4: o[0] = t; o[1] = p; o[2] = v; break;
+    default: o[0] = v; o[1] = p; o[2] = q; break;
     }
 }
 
-static void aq_ring(float cx, float cy, float r, uint16_t c)
+static float capsule(float px, float py, float ax, float ay, float bx, float by, float ra, float rb)
 {
-    int32_t x = (int32_t)r, y = 0, err = 1 - x, X = (int32_t)cx, Y = (int32_t)cy, guard = 400;
-    while (x >= y && guard--) {
-        cv_pset(X + x, Y + y, c); cv_pset(X + y, Y + x, c); cv_pset(X - y, Y + x, c); cv_pset(X - x, Y + y, c);
-        cv_pset(X - x, Y - y, c); cv_pset(X - y, Y - x, c); cv_pset(X + y, Y - x, c); cv_pset(X + x, Y - y, c);
-        y++;
-        if (err < 0) err += 2 * y + 1;
-        else { x--; err += 2 * (y - x) + 1; }
-    }
+    float pax = px - ax, pay = py - ay, bax = bx - ax, bay = by - ay;
+    float h = clamp01((pax * bax + pay * bay) / (bax * bax + bay * bay + 1e-6f));
+    float dx = pax - bax * h, dy = pay - bay * h;
+    return fm_sqrtf(dx * dx + dy * dy) - (ra + (rb - ra) * h);
 }
 
-/* ---- the fish's state */
+/* ---- the scene's state */
 static struct {
-    float x, y;                          /* where it is */
-    float x_from, x_to; uint32_t x_t0, x_dur;
-    int dir;                             /* 1 faces right */
-    float infl;                          /* 0 flat .. 1 fully puffed */
-    float phase;                         /* tail, in turns */
-    float sway;                          /* seaweed, in turns */
-    float hx[16], hy[16], hr[16];        /* recent positions, for the delay echoes */
-    int hpos;
-} fish;
+    float t;                             /* seconds */
+    float x, y, x_from, x_to;            /* the creature, in big pixels */
+    uint32_t x_t0, x_dur;
+    float dir, puff, spin, hue, hue_to;
+    uint32_t kick_at, hit_at, blink_at, still_since;
+    int hit_kind, last_step, last_idx;
+    uint32_t last_hit_ms;
+    float ex[16], ey[16];                /* recent positions, for the delay's echoes */
+    int epos;
+    struct { float x, y, v, ph; uint8_t on; } sp[14];   /* glowing specks (reverb) */
+    float sp_acc;
+    uint32_t rnd;
+    /* per frame, for the cells */
+    float R, sq, sx, ripple_r, ripple_a, trem, tape, bright, eye_r;
+    int mood, blink;
+    float eyes[2][2];
+} sc;
 
-#define NBUB 28
-static struct { float x, y, r, vy, ph; uint8_t on; } bub[NBUB];
-static float bub_acc;
-static uint32_t aq_at;
-
-static void bubble_add(float x, float y, float r)
+static float srnd(void)
 {
+    sc.rnd = sc.rnd * 1664525u + 1013904223u;
+    return (float)(sc.rnd >> 8) * (1.0f / 16777216.0f);
+}
+
+static void scene_init(void)
+{
+    sc.x = sc.x_from = sc.x_to = 40.0f;
+    sc.y = 40.0f;
+    sc.dir = 1.0f;
+    sc.last_step = -1;
+    sc.last_idx = -1;
+    sc.rnd = 0x2468ACEu;
+    sc.blink_at = 3000u;
+}
+
+/* the creature's distance field at (px, py), relative to its centre, facing right; < 0 inside */
+static float creature_sdf(float px, float py)
+{
+    float R = sc.R, d, dist, a;
+    switch (set.creature) {
+    case 0: {                            /* pufferfish */
+        float wob, s, sp, flap = sinr(sc.t * 9.0f) * 0.12f * R;
+        dist = fm_sqrtf(px * px + py * py);
+        a = at2(py, px);
+        wob = 1.0f + 0.06f * (fm_sin_turns(3.0f * a + 0.13f) + 0.6f * fm_sin_turns(5.0f * a + 0.41f)
+                              + 0.4f * fm_sin_turns(9.0f * a + 0.77f));
+        s = fm_sin_turns(16.0f * a + 0.25f);
+        sp = s > 0.0f ? s * s * s * s * s * s : 0.0f;
+        d = dist - (R * 0.96f * wob + sp * R * (0.14f + 0.42f * sc.puff));
+        d = fm_minf(d, capsule(px, py, -0.8f * R, 0.0f, -1.45f * R, -0.45f * R + flap, 0.22f * R, 0.1f * R));
+        d = fm_minf(d, capsule(px, py, -0.8f * R, 0.0f, -1.5f * R, 0.42f * R + flap, 0.22f * R, 0.1f * R));
+        return d;
+    }
+    case 1: {                            /* ocean sunfish */
+        float q, flap = sinr(sc.t * 4.0f) * 0.16f * R;
+        int i;
+        q = fm_sqrtf((px / R) * (px / R) + (py / (0.9f * R)) * (py / (0.9f * R)));
+        d = (q - 1.0f) * 0.9f * R + 0.04f * R * sinr(px * 0.5f + py * 0.3f + 1.0f);
+        d = fm_minf(d, capsule(px, py, -0.2f * R, -0.6f * R, -0.45f * R + flap, -(1.75f + 0.1f * sc.puff) * R, 0.22f * R, 0.06f * R));
+        d = fm_minf(d, capsule(px, py, -0.2f * R, 0.6f * R, -0.45f * R - flap, (1.7f + 0.1f * sc.puff) * R, 0.22f * R, 0.06f * R));
+        for (i = 0; i < 5; i++) {
+            float cx = -0.98f * R - px, cy = (-0.55f + 0.27f * (float)i) * R - py;
+            d = fm_minf(d, fm_sqrtf(cx * cx + cy * cy) - 0.2f * R);
+        }
+        return d;
+    }
+    case 2: {                            /* jellyfish: it pulses on the hits */
+        float rx = R * (1.0f + 0.14f * sc.puff), ry = R * (1.0f - 0.16f * sc.puff), qx = px / rx, qy = py / ry;
+        int i, k;
+        d = (fm_sqrtf(qx * qx + qy * qy) - 1.0f - 0.05f * sinr(px * 0.7f)) * fm_minf(rx, ry);
+        d = fm_maxf(d, py - 0.12f * R);
+        for (i = 0; i < 6; i++) {
+            float x0 = (-0.7f + 0.28f * (float)i) * R, pxp = x0, pyp = 0.05f * R;
+            for (k = 1; k <= 3; k++) {
+                float x1 = x0 + sinr(sc.t * 2.2f + (float)i * 1.7f + (float)k * 0.9f) * 0.14f * R * (float)k / 2.0f;
+                float y1 = (0.05f + (0.45f + 0.03f * (float)(i % 3)) * (float)k) * R * (1.0f - 0.15f * sc.puff);
+                d = fm_minf(d, capsule(px, py, pxp, pyp, x1, y1, (0.14f - 0.03f * (float)k) * R, (0.11f - 0.03f * (float)k) * R));
+                pxp = x1; pyp = y1;
+            }
+        }
+        return d;
+    }
+    default: {                           /* starfish: turns a little on the hits */
+        float arm, r;
+        R *= 1.2f;
+        dist = fm_sqrtf(px * px + py * py);
+        a = at2(py, px);
+        arm = 0.5f + 0.5f * fm_sin_turns(5.0f * (a - sc.spin) + 0.25f);
+        r = R * (0.38f + 0.62f * arm * arm) * (1.0f + 0.05f * fm_sin_turns(7.0f * a + 0.3f)) * (1.0f + 0.1f * fm_sin_turns(a + 0.5f));
+        return dist - r;
+    }
+    }
+}
+
+/* the eyes' places, relative to the centre, facing right */
+static void eye_places(void)
+{
+    static const float E[4][4] = {{0.1f, -0.24f, 0.56f, -0.2f}, {0.38f, -0.2f, 0.68f, -0.18f},
+                                  {-0.3f, -0.25f, 0.3f, -0.25f}, {-0.2f, -0.1f, 0.2f, -0.1f}};
+    const float *e = E[set.creature];
+    float R = sc.R * (set.creature == 3 ? 1.2f : 1.0f), sym = set.creature >= 2;
+    sc.eyes[0][0] = sc.x + (sym ? e[0] : e[0] * sc.dir) * R * sc.sx;
+    sc.eyes[0][1] = sc.y + e[1] * R * sc.sq;
+    sc.eyes[1][0] = sc.x + (sym ? e[2] : e[2] * sc.dir) * R * sc.sx;
+    sc.eyes[1][1] = sc.y + e[3] * R * sc.sq;
+}
+
+/* one eye's light on a cell: adds to c */
+static void eye_light(float *c, float cx, float cy, float ex, float ey, int side)
+{
+    const float *col = EYE_COL[set.eyes];
+    float dx = cx - ex, dy = cy - ey, r = sc.eye_r, d, glow;
+    int core;
+    if (dx > 5.0f * r || dx < -5.0f * r || dy > 5.0f * r || dy < -5.0f * r) return;
+    d = fm_sqrtf(dx * dx + dy * dy);
+    if (sc.blink || sc.mood == MOOD_DORT) {
+        core = fm_fabsf(dy) < 0.4f && fm_fabsf(dx) < 1.3f * r;
+        glow = 0.25f * fm_expf(-(dx * dx * 0.3f + dy * dy * 2.0f));
+    } else if (sc.mood == MOOD_HEUREUX) {
+        float dd = dy + 0.6f * fm_fabsf(dx), ox = fm_maxf(fm_fabsf(dx) - 1.5f * r, 0.0f);
+        core = fm_fabsf(dd) < 0.7f && fm_fabsf(dx) < 1.7f * r;
+        glow = 0.6f * fm_expf(-(dd * dd + ox * ox) / 1.2f);
+    } else if (sc.mood == MOOD_GRINCHEUX) {
+        core = d < r && dy > -0.15f + 0.35f * dx * (float)side;
+        glow = 0.45f * fm_expf(-(d / (r * 1.1f)) * (d / (r * 1.1f)));
+    } else {
+        float rr = sc.mood == MOOD_SURPRIS ? r * 1.45f : r;
+        core = d < rr;
+        glow = 0.6f * fm_expf(-(d / (rr * 1.15f)) * (d / (rr * 1.15f)));
+    }
+    c[0] += glow * col[0]; c[1] += glow * col[1]; c[2] += glow * col[2];
+    if (core) { c[0] = col[0] * 0.5f + 0.55f; c[1] = col[1] * 0.5f + 0.55f; c[2] = col[2] * 0.5f + 0.55f; }
+}
+
+/* the background at a cell */
+static void water(float x, float y, float *c)
+{
+    float t = sc.t, h = sc.hue;
+    switch (set.decor) {
+    case 0: {                            /* rainbow moire on lilac */
+        float u = x * 0.55f + y * 0.95f + 3.0f * sinr(y * 0.08f + t) + 2.0f * sinr(x * 0.05f - t * 0.5f), st;
+        st = 0.5f + 0.5f * sinr(u * 0.9f);
+        hsv(u * 0.045f + t * 0.05f + h, 0.85f * (0.35f + 0.65f * st), 0.85f, c);
+        c[0] = c[0] * 0.72f + 0.2f; c[1] = c[1] * 0.72f + 0.17f; c[2] = c[2] * 0.72f + 0.27f;
+        break;
+    }
+    case 1: {                            /* soft blue, tinted by the chord */
+        float v = 0.04f * sinr(x * 0.3f + y * 0.2f + t), tint[3];
+        hsv(0.6f + h * 0.25f, 0.5f, 0.86f, tint);
+        c[0] = tint[0] + v; c[1] = tint[1] + v; c[2] = tint[2] + v;
+        break;
+    }
+    case 2: {                            /* embers, darker below */
+        float k = y / (float)NC, w = 0.05f * sinr(x * 0.4f - y * 0.3f + t), top[3];
+        hsv(0.03f + h * 0.12f, 0.7f, 0.95f, top);
+        c[0] = top[0] * (1.0f - k) + 0.35f * k + w; c[1] = top[1] * (1.0f - k) + 0.05f * k + w;
+        c[2] = top[2] * (1.0f - k) + 0.12f * k + w;
+        break;
+    }
+    default: {                           /* acid: rings around the creature, kicked by the kick */
+        float dx = x - sc.x, dy = y - sc.y, d = fm_sqrtf(dx * dx + dy * dy), s;
+        float kk = sc.ripple_a;
+        s = 0.6f + 0.3f * sinr(d * 0.7f - t * 3.0f + kk * 6.0f);
+        hsv(d * 0.035f - t * 0.2f + 0.08f * sinr(x * 0.2f + t) + h, s, 0.85f, c);
+        break;
+    }
+    }
+}
+
+static inline uint16_t px565(float r, float g, float b)
+{
+    int32_t R = (int32_t)(r * 255.0f), G = (int32_t)(g * 255.0f), B = (int32_t)(b * 255.0f);
+    R = R < 0 ? 0 : R > 255 ? 255 : R; G = G < 0 ? 0 : G > 255 ? 255 : G; B = B < 0 ? 0 : B > 255 ? 255 : B;
+    return swap16(RGB(R, G, B));
+}
+
+/* one cell's colour */
+static void cell(int cx, int cy, float *c)
+{
+    float x = (float)cx + 0.5f, y = (float)cy + 0.5f, dx, dy, d, cov, halo;
     int i;
-    for (i = 0; i < NBUB; i++)
-        if (!bub[i].on) {
-            bub[i].on = 1; bub[i].x = x; bub[i].y = y; bub[i].r = r;
-            bub[i].vy = 14.0f + rnd() * 16.0f + r * 3.0f; bub[i].ph = rnd();
-            return;
-        }
-}
-
-static void fish_target(int key_idx, uint32_t now)
-{
-    float tx = 58.0f + (float)key_idx * (124.0f / 26.0f);
-    float g = glide_s();
-    fish.x_from = fish.x;
-    fish.x_to = tx;
-    fish.x_t0 = now;
-    fish.x_dur = (uint32_t)(g * 1000.0f) + 140u;
-    if (tx > fish.x + 1.0f) fish.dir = 1;
-    else if (tx < fish.x - 1.0f) fish.dir = -1;
-}
-
-static void step_fish(uint32_t now, float dt)
-{
-    float k, lvl = eng_level(), pitch = 0.0f;
-    int i;
-    /* left / right: eased towards the key, in the glide time */
-    k = fish.x_dur ? (float)(now - fish.x_t0) / (float)fish.x_dur : 1.0f;
-    if (k > 1.0f) k = 1.0f;
-    k = k * k * (3.0f - 2.0f * k);
-    fish.x = fish.x_from + (fish.x_to - fish.x_from) * k;
-    /* up / down: the chord's pitch, as the engine glides it */
-    for (i = 0; i < 4; i++) pitch += vis_pitch(i, now);
-    pitch *= 0.25f;
-    {
-        float ty = active ? 100.0f - (pitch - 52.0f) * (56.0f / 30.0f) : 92.0f;
-        ty = fm_clampf(ty, 46.0f, 98.0f);
-        fish.y += (ty - fish.y) * fm_minf(1.0f, dt * (active ? 9.0f : 1.5f));
+    if (sc.tape > 0.01f)                 /* tape: the rows wobble */
+        x += sc.tape * 1.8f * sinr(y * 0.35f + sc.t * 5.0f);
+    water(x, y, c);
+    c[0] *= sc.bright; c[1] *= sc.bright; c[2] *= sc.bright;
+    /* the creature */
+    dx = (x - sc.x) * sc.dir / sc.sx;
+    dy = (y - sc.y) / sc.sq;
+    if (dx > -2.4f * sc.R && dx < 2.4f * sc.R && dy > -2.4f * sc.R && dy < 2.6f * sc.R) {
+        d = creature_sdf(dx, dy);
+        cov = clamp01(0.5f - d);
+        halo = d > 0.0f ? clamp01(1.0f - d / 6.0f) : 1.0f;
+        halo *= halo;
+        for (i = 0; i < 3; i++) c[i] = c[i] * (1.0f - 0.38f * halo) * (1.0f - cov) + 0.02f * cov;
     }
-    /* puffing: hits push it up (app_frame), it lets the air out; held chords breathe with the level */
-    fish.infl *= fm_expf(-dt / 0.22f);
-    if (active && RHYTHM_DEF[set.rhythm].s[0] == 0) fish.infl = fm_maxf(fish.infl, 0.15f + lvl * 0.9f);
-    fish.phase += dt * (float)set.bpm / 60.0f * (active ? 2.0f : 0.6f);
-    fish.sway += dt * (float)set.bpm / 60.0f * 0.25f;
-    if (fish.phase > 1000.0f) fish.phase -= 1000.0f;
-    if (fish.sway > 1000.0f) fish.sway -= 1000.0f;
-    /* bubbles: REVERB is how many and how big */
-    bub_acc += dt * (0.4f + (float)set.reverb * 0.075f);
-    while (bub_acc >= 1.0f) {
-        bub_acc -= 1.0f;
-        bubble_add(8.0f + rnd() * 224.0f, (float)FLOOR_Y, 1.0f + rnd() * (1.0f + (float)set.reverb * 0.035f));
-    }
-    for (i = 0; i < NBUB; i++)
-        if (bub[i].on) {
-            bub[i].y -= bub[i].vy * dt;
-            bub[i].ph += dt * 1.3f;
-            if (bub[i].y < -6.0f) bub[i].on = 0;
-        }
-}
-
-/* the pufferfish at its place: R the radius (puffed), sq the sidechain squash (1 = none) */
-static void draw_fish(float cx, float cy, float R, float sq, int dir, float infl)
-{
-    float rx = R * (1.0f + (1.0f - sq) * 0.6f), ry = R * sq, d = (float)dir, i_f;
-    float flap = fm_sin_turns(fish.phase) * (3.0f + R * 0.08f);
-    uint16_t body = variation ? RGB(246, 178, 150) : RGB(236, 198, 104), belly = RGB(252, 240, 206);
-    uint16_t dark = RGB(150, 104, 48), spike = RGB(196, 150, 78);
-    int32_t y, n;
-    if (!active) { body = RGB(176, 150, 92); belly = RGB(196, 186, 160); spike = RGB(140, 112, 64); }
-    /* tail: a fan behind */
-    {
-        float bx = cx - d * rx * 0.8f, L = 10.0f + R * 0.35f;
-        for (n = 0; n < (int32_t)L; n++) {
-            float t = (float)n / L, hw = 2.0f + t * (4.0f + R * 0.18f);
-            cv_rect((int32_t)(bx - d * (float)n), (int32_t)(cy + flap * t - hw), 1, (int32_t)(2.0f * hw), dark);
-        }
-    }
-    /* spikes: short bumps when it is flat, long when puffed */
-    for (n = 0; n < 18; n++) {
-        float a = (float)n / 18.0f, ca = fm_sin_turns(a + 0.25f), sa = fm_sin_turns(a);
-        float L = 1.5f + infl * (5.0f + R * 0.3f);
-        int32_t x0 = (int32_t)(cx + ca * rx * 0.9f), y0 = (int32_t)(cy + sa * ry * 0.9f);
-        int32_t x1 = (int32_t)(cx + ca * (rx + L)), y1 = (int32_t)(cy + sa * (ry + L));
-        cv_line(x0, y0, x1, y1, spike);
-        cv_line(x0 + 1, y0, x1 + 1, y1, spike);
-    }
-    /* body, the belly lighter, row by row */
-    for (y = (int32_t)(cy - ry); y <= (int32_t)(cy + ry); y++) {
-        float dy = ((float)y - cy) / ry, hw;
-        if (dy < -1.0f || dy > 1.0f) continue;
-        hw = rx * fm_sqrtf(1.0f - dy * dy);
-        cv_rect((int32_t)(cx - hw + 0.5f), y, (int32_t)(2.0f * hw + 1.0f), 1, dy > 0.28f ? belly : body);
-    }
-    /* spots on the back */
-    for (n = 0; n < 5; n++) {
-        static const float SX[5] = {-0.45f, -0.1f, 0.2f, -0.6f, -0.25f}, SY[5] = {-0.55f, -0.7f, -0.62f, -0.15f, -0.25f};
-        disc(cx + d * SX[n] * rx, cy + SY[n] * ry, R * 0.09f + 0.6f, R * 0.09f + 0.6f, dark);
-    }
-    /* side fin, flapping */
-    disc(cx - d * rx * 0.05f, cy + ry * 0.12f, 3.0f + R * 0.12f, 1.5f + fm_fabsf(flap) * 0.5f, dark);
-    /* cheek (VARIATION: blushing) */
-    if (variation) disc(cx + d * rx * 0.32f, cy + ry * 0.18f, R * 0.14f, R * 0.09f, RGB(255, 120, 140));
-    /* eye: bigger when puffed (surprised); closed when nothing plays */
-    {
-        float ex = cx + d * rx * 0.46f, ey = cy - ry * 0.26f, er = R * (0.2f + infl * 0.07f);
-        if (active) {
-            disc(ex, ey, er, er, RGB(250, 252, 255));
-            disc(ex + d * er * 0.3f, ey, er * 0.55f, er * 0.55f, RGB(16, 20, 30));
-            cv_pset((int32_t)(ex + d * er * 0.1f), (int32_t)(ey - er * 0.35f), RGB(255, 255, 255));
-        } else
-            cv_rect((int32_t)(ex - er), (int32_t)ey, (int32_t)(2.0f * er), 2, dark);
-    }
-    /* mouth: a little "o" that opens with the air */
-    i_f = 1.2f + infl * (1.0f + R * 0.06f);
-    disc(cx + d * rx * 0.94f, cy + ry * 0.1f, i_f, i_f, RGB(150, 70, 60));
-}
-
-static void draw_aquarium(void)
-{
-    uint32_t now = plat_ms();
-    float dt = aq_at ? (float)(now - aq_at) * 0.001f : 0.033f, clear = (float)set.cutoff * 0.01f, sq = 1.0f, R;
-    int32_t y, i;
-    aq_at = now;
-    if (dt > 0.1f) dt = 0.1f;
-    step_fish(now, dt);
-    cv_begin(240, AQ_H, COL_TOP);
-    /* water: CUTOFF clears it (turquoise, sun rays) or clouds it (dark, green, specks) */
-    for (y = 0; y < FLOOR_Y + 6; y++) {
-        float t = (float)y / (float)FLOOR_Y;
-        float r = (8.0f + 30.0f * clear) * (1.0f - t) + (3.0f + 8.0f * clear) * t;
-        float g = (34.0f + 140.0f * clear) * (1.0f - t) + (14.0f + 50.0f * clear) * t;
-        float b = (40.0f + 170.0f * clear) * (1.0f - t) + (22.0f + 92.0f * clear) * t;
-        cv_rect(0, y, 240, 1, rgbf(r, g, b));
-        if (clear > 0.3f) {              /* sun rays, slanted, drifting */
-            float a = (clear - 0.3f) * 0.5f * (1.0f - t);
-            uint16_t c = rgbf(r + (255.0f - r) * a, g + (255.0f - g) * a, b + (255.0f - b) * a);
-            for (i = 0; i < 3; i++) {
-                float x0 = 30.0f + (float)i * 78.0f + fm_sin_turns(fish.sway * 0.1f + (float)i * 0.3f) * 14.0f + (float)y * 0.45f;
-                cv_rect((int32_t)x0, y, 12 + i * 4, 1, c);
+    /* the delay's echoes: dark rings where it was */
+    if (set.delay && active) {
+        for (i = 1; i <= 2; i++) {
+            int h = (sc.epos - i * 5 + 16 * 4) % 16;
+            float ex = x - sc.ex[h], ey = y - sc.ey[h], rr = fm_sqrtf(ex * ex + ey * ey);
+            if (fm_fabsf(rr - sc.R) < 0.6f + 0.2f * (float)i) {
+                float k = 1.0f - (0.5f - 0.15f * (float)i) * (float)set.delay * 0.012f;
+                c[0] *= k; c[1] *= k; c[2] *= k;
             }
         }
     }
-    /* the surface shimmering */
-    for (i = 0; i < 240; i += 6) {
-        int32_t w = 2 + (int32_t)(2.0f + 2.0f * fm_sin_turns(fish.sway + (float)i * 0.013f));
-        cv_rect(i, 0, w, 1, rgbf(120.0f + 120.0f * clear, 200.0f + 50.0f * clear, 230.0f));
+    /* the kick's ripple */
+    if (sc.ripple_a > 0.01f) {
+        float rx = x - sc.x, ry = y - sc.y, rr = fm_sqrtf(rx * rx + ry * ry), w = fm_fabsf(rr - sc.ripple_r);
+        if (w < 1.2f) { float k = sc.ripple_a * (1.0f - w / 1.2f) * 0.45f; c[0] += k; c[1] += k; c[2] += k; }
     }
-    /* specks in murky water */
-    for (i = 0; i < (int32_t)((1.0f - clear) * 40.0f); i++) {
-        float x = (float)((i * 97 + 13) % 240) + fm_sin_turns(fish.sway * 0.2f + (float)i * 0.17f) * 6.0f;
-        float yy = (float)((i * 53 + 7) % FLOOR_Y);
-        cv_pset((int32_t)x, (int32_t)yy, RGB(70, 96, 70));
-    }
-    /* sand, with a wavy top, and seaweed swaying to the tempo */
-    for (i = 0; i < 240; i++) {
-        int32_t top = FLOOR_Y + (int32_t)(2.0f * fm_sin_turns((float)i * 0.011f));
-        cv_rect(i, top, 1, AQ_H - top, ((i * 7) % 11) == 0 ? RGB(150, 128, 92) : RGB(118, 100, 72));
-    }
-    for (i = 0; i < 4; i++) {
-        static const int32_t WX[4] = {14, 28, 206, 224}, WH[4] = {62, 44, 52, 70};
-        int32_t s, px = WX[i], py = FLOOR_Y + 2;
-        for (s = 1; s <= 8; s++) {
-            float t = (float)s / 8.0f;
-            int32_t x = WX[i] + (int32_t)(fm_sin_turns(fish.sway + (float)i * 0.23f - t * 0.35f) * 7.0f * t);
-            int32_t yy = FLOOR_Y + 2 - (int32_t)((float)WH[i] * t);
-            cv_line(px, py, x, yy, RGB(46, 140, 92));
-            cv_line(px + 1, py, x + 1, yy, RGB(34, 112, 74));
-            px = x; py = yy;
+    /* specks of light (reverb) */
+    for (i = 0; i < 14; i++)
+        if (sc.sp[i].on) {
+            float ex = x - sc.sp[i].x, ey = y - sc.sp[i].y;
+            if (ex > -2.5f && ex < 2.5f && ey > -2.5f && ey < 2.5f) {
+                float g = 0.55f / (1.0f + (ex * ex + ey * ey) * 1.6f);
+                c[0] += g * 0.9f; c[1] += g; c[2] += g;
+            }
         }
-    }
-    /* the fish: size from the air in it, squashed by the sidechain when the kick hits */
-    R = (active ? 19.0f : 16.0f) * (1.0f + 0.5f * fish.infl);
-    if (set.kick && set.side && active) {
-        uint32_t age = now - ui.kick_at;
-        if (age < 300u) sq = 1.0f - 0.22f * fm_expf(-(float)age / 90.0f);
-    }
-    fish.hx[fish.hpos] = fish.x; fish.hy[fish.hpos] = fish.y; fish.hr[fish.hpos] = R;
-    if (set.delay_on && active)          /* DELAY: two echoes of the fish, fading */
-        for (i = 2; i >= 1; i--) {
-            int h = (fish.hpos - i * 6 + 16 * 4) % 16;
-            uint16_t c = i == 1 ? RGB(150, 200, 220) : RGB(90, 140, 170);
-            aq_ring(fish.hx[h], fish.hy[h], fish.hr[h], c);
-        }
-    fish.hpos = (fish.hpos + 1) % 16;
-    /* the kick: a ripple out of the fish */
-    if (set.kick && active && now - ui.kick_at < 360u) {
-        float k = (float)(now - ui.kick_at) / 360.0f;
-        aq_ring(fish.x, fish.y, R + 6.0f + k * 46.0f, rgbf(180.0f + 60.0f * (1.0f - k), 230.0f, 255.0f));
-    }
-    draw_fish(fish.x, fish.y, R, sq, fish.dir, fish.infl);
-    /* bubbles in front */
-    for (i = 0; i < NBUB; i++)
-        if (bub[i].on) {
-            float x = bub[i].x + fm_sin_turns(bub[i].ph) * 2.0f;
-            aq_ring(x, bub[i].y, bub[i].r, RGB(200, 236, 250));
-            cv_pset((int32_t)(x - bub[i].r * 0.4f), (int32_t)(bub[i].y - bub[i].r * 0.4f), RGB(255, 255, 255));
-        }
-    cv_blit(0, AQ_Y);
+    eye_light(c, x, y, sc.eyes[0][0], sc.eyes[0][1], set.creature >= 2 ? 1 : (sc.dir > 0.0f ? 1 : -1));
+    eye_light(c, x, y, sc.eyes[1][0], sc.eyes[1][1], set.creature >= 2 ? -1 : (sc.dir > 0.0f ? -1 : 1));
+    if (sc.tape > 0.2f && cy == ((int)(sc.t * 18.0f) % NC)) { c[0] += 0.12f; c[1] += 0.12f; c[2] += 0.12f; }
+    c[0] *= sc.trem; c[1] *= sc.trem; c[2] *= sc.trem;
+    if (cy < BAND_TOP || cy >= BAND_BOT) { c[0] *= 0.3f; c[1] *= 0.3f; c[2] *= 0.3f; }
 }
 
-static void draw_top(void)               /* 0..48: the sound and grid (or a message), the chord */
+/* draw big-pixel rows r0..r0+39 into the canvas (240 x 120) */
+static void draw_cells(int r0)
+{
+    int cx, cy;
+    float c[3];
+    for (cy = r0; cy < r0 + 40; cy++) {
+        uint16_t *row = cv_px + (uint32_t)(cy - r0) * 3u * 240u;
+        for (cx = 0; cx < NC; cx++) {
+            float r, g, b;
+            uint16_t a0, a1, a2, d0, d1, d2;
+            uint16_t *p = row + cx * 3;
+            cell(cx, cy, c);
+            r = c[0] * 1.15f; g = c[1] * 1.15f; b = c[2] * 1.15f;
+            a0 = px565(r, g * 0.35f, b * 0.35f); a1 = px565(r * 0.35f, g, b * 0.35f); a2 = px565(r * 0.35f, g * 0.35f, b);
+            d0 = px565(r * 0.4f, g * 0.14f, b * 0.14f); d1 = px565(r * 0.14f, g * 0.4f, b * 0.14f);
+            d2 = px565(r * 0.14f, g * 0.14f, b * 0.4f);
+            p[0] = a0; p[1] = a1; p[2] = a2;
+            p[240] = a0; p[241] = a1; p[242] = a2;
+            p[480] = d0; p[481] = d1; p[482] = d2;
+        }
+    }
+}
+
+/* ---- the scene, once a frame */
+static void scene_step(uint32_t now, float dt)
+{
+    int st, kick, i, hk;
+    uint32_t at;
+    float pitch = 0.0f, ty;
+    sc.t += dt;
+    /* left / right: the key, in the glide time */
+    if (cur_idx >= 0 && cur_idx != sc.last_idx) {
+        float tx = 20.0f + (float)cur_idx * (40.0f / 26.0f);
+        sc.x_from = sc.x; sc.x_to = tx; sc.x_t0 = now; sc.x_dur = (uint32_t)(glide_s() * 1000.0f) + 160u;
+        if (tx > sc.x + 0.5f) sc.dir = 1.0f;
+        else if (tx < sc.x - 0.5f) sc.dir = -1.0f;
+    }
+    sc.last_idx = cur_idx;
+    {
+        float k = sc.x_dur ? (float)(now - sc.x_t0) / (float)sc.x_dur : 1.0f;
+        k = clamp01(k);
+        k = k * k * (3.0f - 2.0f * k);
+        sc.x = sc.x_from + (sc.x_to - sc.x_from) * k;
+    }
+    /* up / down: the chord's pitch (gliding as the engine glides it), a slow bob when idle */
+    for (i = 0; i < 4; i++) pitch += vis_pitch(i, now);
+    pitch *= 0.25f;
+    ty = active ? 50.0f - (pitch - 52.0f) * (22.0f / 30.0f) : 40.0f + 2.5f * sinr(sc.t * 0.9f);
+    ty = fm_clampf(ty, 28.0f, 50.0f);
+    sc.y += (ty - sc.y) * fm_minf(1.0f, dt * (active ? 8.0f : 1.5f));
+    /* the water's hue follows the chord's root */
+    if (active && cur_idx >= 0) sc.hue_to = (float)((set.key + (cur_idx * 7)) % 12) / 12.0f;
+    {
+        float dh = sc.hue_to - frac(sc.hue);
+        if (dh > 0.5f) dh -= 1.0f;
+        if (dh < -0.5f) dh += 1.0f;
+        sc.hue = frac(sc.hue + dh * fm_minf(1.0f, dt * 1.2f));
+    }
+    /* hits: puff up, turn; the kick: a ripple */
+    hk = eng_last_hit(&at);
+    if (at != sc.last_hit_ms && active) {
+        sc.last_hit_ms = at;
+        sc.hit_at = now;
+        sc.hit_kind = hk;
+        sc.puff = fm_maxf(sc.puff, hk == 1 ? 1.0f : 0.6f);
+        sc.spin += hk == 1 ? 0.04f : 0.02f;
+    }
+    st = eng_last_step(&at, &kick);
+    if (st != sc.last_step) { sc.last_step = st; if (kick) sc.kick_at = now; }
+    sc.puff *= fm_expf(-dt / 0.22f);
+    if (active && RHYTHM_DEF[set.rhythm].s[0] == 0) sc.puff = fm_maxf(sc.puff, 0.12f + eng_level() * 0.8f);
+    sc.spin += dt * 0.01f;
+    /* size, sidechain squash, ripple */
+    sc.R = (active ? 11.0f : 10.0f) * (set.creature == 0 ? 1.0f + 0.35f * sc.puff : 1.0f);
+    sc.sq = 1.0f; sc.sx = 1.0f;
+    if (set.drums_on && set.side) {
+        uint32_t age = now - sc.kick_at;
+        if (age < 300u) {
+            float k = (float)set.side * 0.01f * 0.25f * fm_expf(-(float)age / 90.0f);
+            sc.sq = 1.0f - k; sc.sx = 1.0f + k * 0.7f;
+        }
+    }
+    sc.ripple_a = 0.0f;
+    if (set.drums_on && set.dkick && now - sc.kick_at < 420u) {
+        float k = (float)(now - sc.kick_at) / 420.0f;
+        sc.ripple_r = sc.R + 3.0f + k * 32.0f;
+        sc.ripple_a = 1.0f - k;
+    }
+    /* the delay's echoes */
+    sc.ex[sc.epos] = sc.x; sc.ey[sc.epos] = sc.y;
+    sc.epos = (sc.epos + 1) % 16;
+    /* specks: reverb is how many */
+    sc.sp_acc += dt * (float)set.reverb * 0.06f;
+    while (sc.sp_acc >= 1.0f) {
+        sc.sp_acc -= 1.0f;
+        for (i = 0; i < 14; i++)
+            if (!sc.sp[i].on) {
+                sc.sp[i].on = 1; sc.sp[i].x = 4.0f + srnd() * 72.0f; sc.sp[i].y = (float)BAND_BOT + 2.0f;
+                sc.sp[i].v = 3.0f + srnd() * 5.0f; sc.sp[i].ph = srnd();
+                break;
+            }
+    }
+    for (i = 0; i < 14; i++)
+        if (sc.sp[i].on) {
+            sc.sp[i].y -= sc.sp[i].v * dt;
+            sc.sp[i].x += sinr(sc.t * 1.3f + sc.sp[i].ph * TAU_F) * dt * 1.5f;
+            if (sc.sp[i].y < -3.0f) sc.sp[i].on = 0;
+        }
+    /* mood: in AUTO, asleep when nothing plays, surprised on an accent, happy on the variation,
+     * grumpy when only the drums play */
+    if (set.mood == MOOD_AUTO) {
+        if (!active && !set.drums_on) sc.mood = MOOD_DORT;
+        else if (active && sc.hit_kind == 1 && now - sc.hit_at < 220u) sc.mood = MOOD_SURPRIS;
+        else if (variation) sc.mood = MOOD_HEUREUX;
+        else if (!active) sc.mood = MOOD_GRINCHEUX;
+        else sc.mood = MOOD_CONTENT;
+    } else sc.mood = set.mood;
+    if (now > sc.blink_at) { sc.blink_at = now + 2500u + (uint32_t)(srnd() * 4000.0f); }
+    sc.blink = (sc.blink_at > now && sc.blink_at - now < 120u);
+    sc.eye_r = 1.35f;
+    sc.bright = 0.5f + 0.5f * (float)set.cutoff * 0.01f;
+    sc.trem = 1.0f - (float)set.trem * 0.01f * 0.4f * (0.5f + 0.5f * sinr(sc.t * (float)set.bpm / 60.0f * 2.0f * TAU_F));
+    sc.tape = (float)set.tape * 0.01f;
+    eye_places();
+}
+
+/* ---- the info bands, crisp over the picture */
+static uint16_t page_col(void) { const uint8_t *c = PAGE_RGB[set.page]; return RGB(c[0], c[1], c[2]); }
+
+static void draw_top_text(void)
 {
     char t[24];
+    const char *chord = active ? chord_txt : (chord_txt[0] ? chord_txt : "OSR-1");
     uint32_t now = plat_ms();
-    cv_begin(240, TOP_H, COL_TOP);
     if (now < ui.msg_until) {
-        int32_t x = cv_text(10, 2, &FONT_XS, ui.msg[0], COL_MUTED);
-        cv_text(x + 6, 2, &FONT_XS, ui.msg[1], COL_CORAL);
+        int32_t x = cv_text(8, 0, &FONT_XS, ui.msg[0], RGB(200, 196, 210));
+        cv_text(x + 6, 0, &FONT_XS, ui.msg[1], page_col());
     } else {
-        cv_text(10, 2, &FONT_XS, SOUND_NAME[set.sound], COL_AQUA);
-        cv_text(230 - text_w(&FONT_XS, GRID_DEF[set.grid].name), 2, &FONT_XS, GRID_DEF[set.grid].name, COL_MUTED);
+        cv_text(8, 0, &FONT_XS, SOUND_NAME[set.sound], page_col());
+        cv_text(232 - text_w(&FONT_XS, GRID_DEF[set.grid].name), 0, &FONT_XS, GRID_DEF[set.grid].name, RGB(200, 196, 210));
     }
-    cv_text(10, 15, &FONT_L, active ? chord_txt : (chord_txt[0] ? chord_txt : "OSR-1"), active ? COL_INK : COL_MUTED);
+    cv_text(8, 9, &FONT_L, chord, active ? RGB(250, 248, 252) : RGB(170, 166, 180));
     t[0] = 0;
+    if (variation) text_cat(t, "VAR  ");
     text_cat(t, NOTE[set.key]);
-    if (variation) text_cat(t, "  VAR");
-    cv_text(230 - text_w(&FONT_XS, t), 28, &FONT_XS, t, variation ? RGB(255, 140, 160) : COL_MUTED);
-    cv_blit(0, 0);
+    cv_text(232 - text_w(&FONT_S, t), 19, &FONT_S, t, variation ? RGB(255, 150, 220) : RGB(200, 196, 210));
 }
 
-static void draw_bottom(void)            /* 192..240: the rhythm's steps as pebbles, rhythm, BPM, kick / sidechain */
+static void draw_bottom_text(void)       /* in the second canvas: y 0 = screen row 120 */
 {
-    char t[16];
-    const char *s = RHYTHM_DEF[set.rhythm].s;
-    uint32_t now = plat_ms();
-    int i, hold = s[0] == 0;
-    cv_begin(240, 48, COL_SAND_BG);
-    for (i = 0; i < 16; i++) {
-        int32_t x = 13 + i * 14;
-        int hitv = !hold && (s[i] == 'X' || s[i] == 'x'), tie = !hold && s[i] == '-';
-        uint16_t c = hitv ? (s[i] == 'X' ? RGB(170, 150, 118) : RGB(120, 106, 84)) : (hold || tie ? RGB(64, 56, 46) : RGB(40, 35, 29));
-        float h = hold ? 2.5f : hitv ? (s[i] == 'X' ? 4.5f : 3.5f) : 1.5f;
-        if (ui.last_step == i && now - ui.step_at < 160u && (hitv || hold)) c = COL_CORAL;
-        disc((float)x + 5.0f, 12.0f, 5.0f, h, c);
+    int k;
+    int32_t y0 = 189 - 120, tw = text_w(&FONT_T, PAGE_NAME[set.page]) + 10;
+    uint16_t pc = page_col();
+    cv_rect(6, y0 + 1, tw, 13, pc);
+    cv_text(11, y0 + 1, &FONT_T, PAGE_NAME[set.page], RGB(0, 0, 0));
+    {   /* the rhythm's name and the drums, small, to the right of the tab */
+        char t[32];
+        t[0] = 0;
+        text_cat(t, set.rhythm ? RHYTHM_NAME[set.rhythm] : "RYTHME OFF");
+        if (set.drums_on) text_cat(t, " + DRUMS");
+        cv_text(232 - text_w(&FONT_T, t), y0 + 1, &FONT_T, t, RGB(170, 166, 180));
     }
-    cv_text(10, 26, &FONT_XS, RHYTHM_NAME[set.rhythm], COL_SAND_TXT);
-    int_text(set.bpm, t);
-    text_cat(t, " BPM");
-    cv_text(124 - text_w(&FONT_XS, t) / 2, 26, &FONT_XS, t, RGB(140, 126, 104));
-    {
-        int32_t x = 230 - text_w(&FONT_XS, "SC");
-        cv_text(x, 26, &FONT_XS, "SC", set.side ? COL_AQUA : RGB(84, 76, 64));
-        x -= text_w(&FONT_XS, "KICK") + 8;
-        cv_text(x, 26, &FONT_XS, "KICK", set.kick ? (now - ui.kick_at < 120u ? COL_CORAL : COL_INK) : RGB(84, 76, 64));
+    for (k = 0; k < 4; k++) {
+        char v[24];
+        const kdef_t *d = &KD[set.page][k];
+        int32_t x = 6 + k * 58;
+        float f = knob_text(d, v);
+        const felucca_font_t *vf = text_w(&FONT_S, v) <= 56 ? &FONT_S : &FONT_T;
+        cv_text(x, y0 + 15, &FONT_T, d->lab, RGB(190, 186, 200));
+        cv_text(x, y0 + 28 + (vf == &FONT_T ? 2 : 0), vf, v, RGB(250, 248, 252));
+        cv_rect(x, y0 + 47, 52, 2, RGB(60, 58, 70));
+        cv_rect(x, y0 + 47, (int32_t)(52.0f * f + 0.5f), 2, pc);
     }
-    cv_blit(0, BOT_Y);
 }
 
-/* ---- HOME: the help screen, laid out like the panel */
+/* ---- HOME held: the help, laid out like the panel */
 static void help_box(int32_t x, int32_t y, int32_t w, int32_t h, const char *dev, const char *fn, uint16_t fc,
                      uint16_t edge, const felucca_font_t *ff)
 {
     cv_rect(x, y, w, h, edge);
-    cv_rect(x + 1, y + 1, w - 2, h - 2, RGB(14, 26, 40));
-    cv_text(x + (w - text_w(&FONT_T, dev)) / 2, y + 3, &FONT_T, dev, COL_MUTED);
+    cv_rect(x + 1, y + 1, w - 2, h - 2, RGB(16, 14, 22));
+    cv_text(x + (w - text_w(&FONT_T, dev)) / 2, y + 3, &FONT_T, dev, RGB(150, 146, 160));
     cv_text(x + (w - text_w(ff, fn)) / 2, y + h - ff->h - 3, ff, fn, fc);
 }
 
 static void draw_help(void)
 {
-    static const char *const ENC_DEV[3] = {"PRESET", "ALGO", "SELECT"}, *const ENC_FN[3] = {"SON", "RYTHME", "GRILLE"};
-    static const char *const K_FN[4] = {"CUTOFF", "GLIDE", "REVERB", "BPM"}, *const K_DEV[4] = {"K1", "K2", "K3", "K4"};
+    static const char *const ENC_DEV[3] = {"SELECT", "ALGO", "PRESET"}, *const ENC_FN[3] = {"GRILLE", "RYTHME", "SON"};
     static const char *const B_DEV[12] = {"FX", "SCL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC"};
-    static const char *const B_FN[12] = {"KICK", "SIDE", "VAR", "BASSE", "VOIX", "RICHE", "AIDE", "DELAY", "TON-", "TON+", "LATCH", "-"};
-    static const uint16_t B_COL[12] = {RGB(255, 140, 96), RGB(110, 220, 235), RGB(255, 140, 160), RGB(236, 244, 248),
-                                       RGB(236, 244, 248), RGB(236, 244, 248), RGB(255, 214, 120), RGB(236, 244, 248),
-                                       RGB(236, 244, 248), RGB(236, 244, 248), RGB(120, 230, 150), RGB(84, 96, 110)};
+    static const char *const B_FN[12] = {"FX", "ACCORD", "GROOVE", "VAR", "DECOR", "BATT", "HOME", "-", "LATCH", "BASSE", "DRUMS", "-"};
+    static const uint8_t B_PAGE[12] = {1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0};
     int32_t i;
-    /* rows 0..119: title, the 3 big knobs, the 4 small ones */
-    cv_begin(240, 120, COL_TOP);
-    cv_text(6, 2, &FONT_XS, "AIDE", RGB(255, 214, 120));
-    cv_text(234 - text_w(&FONT_XS, "HOME = FERMER"), 2, &FONT_XS, "HOME = FERMER", COL_MUTED);
+    cv_begin(240, 120, RGB(8, 6, 12));
+    cv_text(6, 2, &FONT_XS, "AIDE", RGB(255, 214, 110));
+    cv_text(234 - text_w(&FONT_XS, "LACHE HOME"), 2, &FONT_XS, "LACHE HOME", RGB(150, 146, 160));
     for (i = 0; i < 3; i++)
-        help_box(6 + i * 77, 22, 74, 44, ENC_DEV[i], ENC_FN[i], COL_AQUA, RGB(40, 70, 90), &FONT_XS);
-    for (i = 0; i < 4; i++)
-        help_box(6 + i * 57, 72, 54, 44, K_DEV[i], K_FN[i], COL_INK, RGB(40, 70, 90), &FONT_T);
+        help_box(6 + i * 77, 22, 74, 44, ENC_DEV[i], ENC_FN[i], RGB(120, 230, 255), RGB(50, 46, 70), &FONT_XS);
+    cv_text(6, 74, &FONT_T, "K1 K2 K3 K4 : LES 4 REGLAGES DE LA PAGE,", RGB(220, 216, 228));
+    cv_text(6, 88, &FONT_T, "AFFICHES EN BAS DE L'ECRAN.", RGB(220, 216, 228));
+    cv_text(6, 104, &FONT_T, "BOUTONS EN COULEUR = PAGES", RGB(255, 214, 110));
     cv_blit(0, 0);
-    /* rows 120..239: the 12 buttons, two rows of six, then the keys */
-    cv_begin(240, 120, COL_TOP);
+    cv_begin(240, 120, RGB(8, 6, 12));
     for (i = 0; i < 12; i++) {
-        uint16_t edge = i < 2 ? RGB(110, 80, 70) : i == 6 ? RGB(110, 96, 50) : RGB(40, 70, 90);
-        help_box(4 + (i % 6) * 39, 2 + (i / 6) * 46, 37, 42, B_DEV[i], B_FN[i], B_COL[i], edge, &FONT_T);
+        uint16_t edge = B_PAGE[i] ? RGB(120, 100, 40) : RGB(50, 46, 70);
+        uint16_t fc = B_PAGE[i] ? RGB(255, 214, 110) : RGB(240, 238, 244);
+        if (B_FN[i][0] == '-') fc = RGB(80, 76, 90);
+        help_box(4 + (i % 6) * 39, 2 + (i / 6) * 46, 37, 42, B_DEV[i], B_FN[i], fc, edge, &FONT_T);
     }
-    cv_text(120 - text_w(&FONT_T, "TOUCHES = ACCORDS   OCT- / OCT+ = OCTAVE") / 2, 100, &FONT_T,
-            "TOUCHES = ACCORDS   OCT- / OCT+ = OCTAVE", COL_MUTED);
+    cv_text(120 - text_w(&FONT_T, "LFO TENU = VARIATION   OCT- / OCT+") / 2, 100, &FONT_T,
+            "LFO TENU = VARIATION   OCT- / OCT+", RGB(150, 146, 160));
     cv_blit(0, 120);
 }
 
 void app_ui_init(void)
 {
-    int i, j;
-    lcd_fill(0, 0, 240, 240, COL_TOP);
+    int i;
+    lcd_fill(0, 0, 240, 240, RGB(8, 6, 12));
     for (i = 0; i < 5; i++) vis[i].to = vis[i].from = i == 4 ? 36.0f : 60.0f + (float)i * 4.0f;
-    (void)j;
-    fish.x = fish.x_from = fish.x_to = 120.0f;
-    fish.y = 92.0f;
-    fish.dir = 1;
-    ui.last_step = -1;
-    ui.redraw_top = ui.redraw_bottom = 1;
+    scene_init();
 }
 
 void app_frame(void)
 {
-    uint32_t now = plat_ms(), at;
-    int kick, st;
-    static char last_chord[16];
-    static int last_idx = -1;
+    uint32_t now = plat_ms();
     input();
-    if (cur_idx >= 0 && cur_idx != last_idx) fish_target(cur_idx, now);
-    last_idx = cur_idx;
-    st = eng_last_step(&at, &kick);
-    if (st != ui.last_step) {
-        ui.last_step = st;
-        ui.step_at = now;
-        if (kick) ui.kick_at = now;
-        ui.redraw_bottom = 1;
-        if (st >= 0 && active) {         /* a hit of the rhythm: the fish puffs up, a bubble from its mouth */
-            const char *s = RHYTHM_DEF[set.rhythm].s;
-            if (s[0] && (s[st] == 'X' || s[st] == 'x')) {
-                fish.infl = fm_maxf(fish.infl, s[st] == 'X' ? 1.0f : 0.6f);
-                if (s[st] == 'X') bubble_add(fish.x + (float)fish.dir * 24.0f, fish.y, 1.5f + rnd() * 1.5f);
-            }
-        }
-    }
-    if (ui.step_at && now - ui.step_at > 160u && now - ui.step_at < 200u) ui.redraw_bottom = 1;
-    if (ui.msg_until && now >= ui.msg_until) { ui.msg_until = 0; ui.redraw_top = 1; }
-    if (memcmp(last_chord, chord_txt, sizeof last_chord)) { memcpy(last_chord, chord_txt, sizeof last_chord); ui.redraw_top = 1; }
-    if (help_on) {
-        if (!help_drawn) { help_drawn = 1; draw_help(); }
+    if (ui.help) {
+        if (!ui.help_drawn) { ui.help_drawn = 1; draw_help(); }
         ann_tick(now);
         return;
     }
-    if (ui.redraw_top) { ui.redraw_top = 0; draw_top(); }
-    if (now - ui.trail_at >= 33u) { ui.trail_at = now; draw_aquarium(); }
-    if (ui.redraw_bottom) { ui.redraw_bottom = 0; draw_bottom(); }
+    if (now - ui.frame_at >= 40u) {
+        float dt = ui.frame_at ? (float)(now - ui.frame_at) * 0.001f : 0.04f;
+        if (dt > 0.1f) dt = 0.1f;
+        ui.frame_at = now;
+        scene_step(now, dt);
+        cv_begin(240, 120, 0);
+        draw_cells(0);
+        draw_top_text();
+        cv_blit(0, 0);
+        cv_begin(240, 120, 0);
+        draw_cells(40);
+        draw_bottom_text();
+        cv_blit(0, 120);
+    }
     ann_tick(now);
 }
 
@@ -942,12 +1149,18 @@ int app_expect(const char *what, int *got)
     else if (!strcmp(what, "active")) *got = active;
     else if (!strcmp(what, "rich")) *got = set.rich;
     else if (!strcmp(what, "octave")) *got = set.octave;
-    else if (!strcmp(what, "kick")) *got = set.kick;
     else if (!strcmp(what, "variation")) *got = variation;
     else if (!strcmp(what, "dirty")) *got = set_dirty;
     else if (!strcmp(what, "bpm")) *got = set.bpm;
     else if (!strcmp(what, "side")) *got = set.side;
-    else if (!strcmp(what, "help")) *got = help_on;
+    else if (!strcmp(what, "page")) *got = set.page;
+    else if (!strcmp(what, "drums")) *got = set.drums_on;
+    else if (!strcmp(what, "latch")) *got = set.latch;
+    else if (!strcmp(what, "help")) *got = ui.help;
+    else if (!strcmp(what, "cutoff")) *got = set.cutoff;
+    else if (!strcmp(what, "delay")) *got = set.delay;
+    else if (!strcmp(what, "bsound")) *got = set.bsound;
+    else if (!strcmp(what, "creature")) *got = set.creature;
     else return 0;
     return 1;
 }

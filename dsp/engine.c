@@ -22,6 +22,7 @@ static void copy(void *d, const void *s, uint32_t n)
 #define CH_N 2048u                      /* chorus line */
 #define DL_N 28672u                     /* ping-pong delay, per side: a dotted eighth at 70 BPM (0.64 s) */
 #define RV_PRE 1323u                    /* reverb pre-delay: 30 ms */
+#define TP_N 1024u                      /* tape wow / flutter line */
 static const uint32_t RV_LEN[4] = {1427u, 1663u, 1871u, 2053u};
 static const uint32_t AP_LEN[4] = {142u, 107u, 379u, 277u};
 
@@ -30,21 +31,25 @@ static float ks_buf[4][KS_N] PLAT_POOL;
 static float ch_buf[CH_N] PLAT_POOL;
 static int16_t dl_buf[2][DL_N] PLAT_POOL;
 static float rv_pre[RV_PRE] PLAT_POOL;
+static float tp_buf[TP_N] PLAT_POOL;
 static float rv_line0[1427] PLAT_POOL, rv_line1[1663] PLAT_POOL, rv_line2[1871] PLAT_POOL, rv_line3[2053] PLAT_POOL;
 static float ap_buf0[142] PLAT_POOL, ap_buf1[107] PLAT_POOL, ap_buf2[379] PLAT_POOL, ap_buf3[277] PLAT_POOL;
 static float *const rv_line[4] = {rv_line0, rv_line1, rv_line2, rv_line3};
 static float *const ap_buf[4] = {ap_buf0, ap_buf1, ap_buf2, ap_buf3};
 
 /* ------------------------------------------------------------------ command queue (main loop -> render) --- */
-enum { CMD_SOUND, CMD_RHYTHM, CMD_CHORD, CMD_STOP, CMD_PARAMS, CMD_FX, CMD_PANIC };
+enum { CMD_SOUND, CMD_RHYTHM, CMD_CHORD, CMD_STOP, CMD_PARAMS, CMD_FX, CMD_GROOVE, CMD_DRUMS, CMD_BASS, CMD_PANIC };
 typedef struct {
     uint8_t t;
     union {
         sound_t s;
         rhythm_t r;
         struct { float notes[4], bass, glide; } c;
-        struct { float bpm, cut, q; uint8_t kick, side, bass_on; } p;
-        struct { float rev, del; } f;
+        struct { float bpm, cut, q, side; uint8_t drums; } p;
+        struct { float rev, del, trem, tape; } f;
+        struct { float swing, dens, gate, strum; } g;
+        struct { drums_t d; float k, h, r; } d;
+        struct { uint8_t sound, motif; float level, cut; } b;
     } u;
 } cmd_t;
 #define QN 16u
@@ -72,9 +77,20 @@ static struct {
     sound_t p;
     rhythm_t rh;
     voice_t v[4];
-    float bm, btarget, binc, bp, bs;
-    float cut, q, bpm;
-    uint8_t kick, side, bass_on, active, running;
+    float bm, btarget, binc, bp, bs, b2;
+    float cut, q, bpm, side;
+    uint8_t drums_on, active, running;
+    /* groove */
+    float swing, dens, gatem, strum, sdel[4], sg[4];
+    /* drums */
+    drums_t dr;
+    float dk, dh, dr_l, k_gain, h_env, h_gain, h_dec, h_lp, h_lp2, r_env, r_gain, r_ph1, r_ph2;
+    /* bass */
+    uint8_t bsound, bmotif, bstage, boct;
+    float blevel, bcut, be, bgate, bfenv, bic1, bic2, bg, bk;
+    /* tape, tremolo */
+    float tape, trem, tp_lp, tp_ph1, tp_ph2, tr_ph;
+    uint32_t tp_w;
     int step;
     float step_left;
     /* envelope */
@@ -104,6 +120,8 @@ static struct {
     volatile int last_step;
     volatile uint32_t last_step_ms;
     volatile int last_kick;
+    volatile int last_hit;
+    volatile uint32_t last_hit_ms;
     float level;
 } E;
 
@@ -150,15 +168,37 @@ void eng_chord(const float notes[4], float bass, float glide_s)
 }
 void eng_stop(void) { cmd_t c; c.t = CMD_STOP; push(&c); }
 void eng_panic(void) { cmd_t c; c.t = CMD_PANIC; push(&c); }
-void eng_params(float bpm, float cut_hz, float q, int kick, int side, int bass_on)
+void eng_params(float bpm, float cut_hz, float q, float side, int drums_on)
 {
     cmd_t c;
     c.t = CMD_PARAMS;
-    c.u.p.bpm = bpm; c.u.p.cut = cut_hz; c.u.p.q = q;
-    c.u.p.kick = (uint8_t)kick; c.u.p.side = (uint8_t)side; c.u.p.bass_on = (uint8_t)bass_on;
+    c.u.p.bpm = bpm; c.u.p.cut = cut_hz; c.u.p.q = q; c.u.p.side = side; c.u.p.drums = (uint8_t)drums_on;
     push(&c);
 }
-void eng_fx(float reverb, float delay) { cmd_t c; c.t = CMD_FX; c.u.f.rev = reverb; c.u.f.del = delay; push(&c); }
+void eng_fx(float reverb, float delay, float trem, float tape)
+{
+    cmd_t c;
+    c.t = CMD_FX; c.u.f.rev = reverb; c.u.f.del = delay; c.u.f.trem = trem; c.u.f.tape = tape;
+    push(&c);
+}
+void eng_groove(float swing, float density, float gate, float strum)
+{
+    cmd_t c;
+    c.t = CMD_GROOVE; c.u.g.swing = swing; c.u.g.dens = density; c.u.g.gate = gate; c.u.g.strum = strum;
+    push(&c);
+}
+void eng_drums(const drums_t *d, float kick, float hat, float rim)
+{
+    cmd_t c;
+    c.t = CMD_DRUMS; c.u.d.d = *d; c.u.d.k = kick; c.u.d.h = hat; c.u.d.r = rim;
+    push(&c);
+}
+void eng_bass(int sound, int motif, float level, float cut)
+{
+    cmd_t c;
+    c.t = CMD_BASS; c.u.b.sound = (uint8_t)sound; c.u.b.motif = (uint8_t)motif; c.u.b.level = level; c.u.b.cut = cut;
+    push(&c);
+}
 
 int eng_last_step(uint32_t *at_ms, int *kick)
 {
@@ -166,7 +206,15 @@ int eng_last_step(uint32_t *at_ms, int *kick)
     if (kick) *kick = E.last_kick;
     return E.last_step;
 }
+int eng_last_hit(uint32_t *at_ms)
+{
+    if (at_ms) *at_ms = E.last_hit_ms;
+    return E.last_hit;
+}
 float eng_level(void) { return E.level; }
+
+static inline float rndu(void) { return 0.5f + 0.5f * rnd(); }
+static uint32_t now_ms(void) { return (uint32_t)((float)E.samples * (1000.0f / SR)); }
 
 /* ------------------------------------------------------------------ render side --- */
 static void set_notes(const float *notes, float bass, float glide_chunks)
@@ -215,35 +263,91 @@ static void hit(float vel, float gate_s, float atk)
     E.rel_s = (E.rh.hold ? p->rel : fm_minf(p->rel, 0.3f)) * SR;
     E.fenv = 1.0f;
     E.ienv = 1.0f;
-    if (p->engine == ENGINE_PLUCK)
-        for (i = 0; i < 4; i++)
-            excite(&E.v[i], p->bright);
+    if (E.bmotif == MOTIF_SUIT || E.bmotif == MOTIF_TENUE) E.bfenv = 1.0f;
+    for (i = 0; i < 4; i++) {           /* strum: the voices start one after the other, low to high */
+        E.sdel[i] = E.strum * 0.032f * SR * (float)i;
+        if (E.sdel[i] > 0.0f) E.sg[i] = 0.0f;
+        else if (p->engine == ENGINE_PLUCK) excite(&E.v[i], p->bright);
+    }
+    E.last_hit = vel > 0.8f ? 1 : 2;
+    E.last_hit_ms = now_ms();
 }
 
 static float step_len(int i)
 {
-    float sw = E.rh.swing, d = 60.0f / E.bpm / 4.0f * SR;
+    float sw = fm_minf(0.42f, E.rh.swing + E.swing), d = 60.0f / E.bpm / 4.0f * SR;
     return (i & 1) ? d * (1.0f - sw) : d * (1.0f + sw);
 }
 
 static void start_transport(void) { E.running = 1; E.step = 0; E.step_left = 0.0f; }
 
+/* the transport runs while chords play a rhythm (or the bass a motif), or the drums play */
+static int need_run(void) { return (E.active && (!E.rh.hold || E.bmotif >= MOTIF_CONTRE)) || E.drums_on; }
+static void check_run(void)
+{
+    if (need_run()) { if (!E.running) start_transport(); }
+    else E.running = 0;
+}
+
+/* bass motifs: x a note, o an octave up, - it lasts one more step */
+static const char *const MOTIF_STR[NMOTIF] = {
+    "", "", "..x-..x-..x-..x-", "x.o.x.o.x.o.x.o.", "x-------x-------", "x.xxx.xxx.xxx.xx", "x-.x-.x-..x-.x-.",
+    "xxxxxxxxxxxxxxxx",
+};
+
+static void bass_hit(float gate_s, int oct)
+{
+    E.bstage = 1;
+    E.bgate = gate_s;
+    E.boct = (uint8_t)oct;
+    E.bfenv = 1.0f;
+}
+
 static void on_step(void)
 {
-    int i = E.step, beat = (i & 3) == 0;
-    if (beat && E.kick) { E.k_tail = E.k_last; E.k_ph = 0.0f; E.k_amp = 1.0f; E.k_pitch = 1.0f; }
-    if (beat && (E.kick || E.side)) E.duck_atk = 1;
-    if (E.active && !E.rh.hold && E.rh.v[i] > 0.0f) {
-        float len = 0.0f;
-        int k;
-        for (k = 0; k < E.rh.len[i]; k++)
-            len += step_len((i + k) & 15);
-        hit(E.rh.v[i], len * E.rh.gate, E.rh.atk);
+    int i = E.step, kick = 0;
+    float sl = step_len(i);
+    if (E.drums_on) {
+        if (E.dr.k[i] > 0.0f) {
+            E.k_tail = E.k_last; E.k_ph = 0.0f; E.k_amp = 1.0f; E.k_pitch = 1.0f;
+            E.k_gain = E.dr.k[i] * E.dk;
+            E.duck_atk = 1;
+            kick = 1;
+        }
+        if (E.dr.h[i] > 0.0f) {
+            E.h_env = 1.0f;
+            E.h_gain = E.dr.h[i] * E.dh * (0.85f + 0.15f * rndu());
+            E.h_dec = E.dr.open[i] ? 0.99975f : 0.99860f;    /* ~90 ms open, ~16 ms closed */
+        }
+        if (E.dr.r[i] > 0.0f) { E.r_env = 1.0f; E.r_gain = E.dr.r[i] * E.dr_l; E.r_ph1 = E.r_ph2 = 0.0f; }
+    }
+    if (E.active && !E.rh.hold) {
+        float v = E.rh.v[i];
+        int nlen = E.rh.len[i];
+        if (v > 0.0f && E.dens < 0.0f && i != 0 && rndu() < -E.dens * 0.75f) v = 0.0f;      /* fewer hits */
+        else if (v <= 0.0f && E.dens > 0.0f && (i & 1) && !(E.stage >= 1 && E.stage <= 3)
+                 && rndu() < E.dens * 0.5f) { v = 0.45f; nlen = 1; }                        /* ghost hits */
+        if (v > 0.0f) {
+            float len = 0.0f, g;
+            int k;
+            for (k = 0; k < nlen; k++)
+                len += step_len((i + k) & 15);
+            g = fm_minf(len * 1.02f, len * E.rh.gate * E.gatem);
+            hit(v * (1.0f - 0.12f * E.swing * 2.0f * rndu()), g, E.rh.atk);
+        }
+    }
+    if (E.active && E.bmotif >= MOTIF_CONTRE) {
+        const char *m = MOTIF_STR[E.bmotif];
+        if (m[i] == 'x' || m[i] == 'o') {
+            int k = 1;
+            while (i + k < 16 && m[i + k] == '-') k++;
+            bass_hit(sl * (float)k * 0.8f, m[i] == 'o');
+        }
     }
     E.last_step = i;
-    E.last_step_ms = (uint32_t)((float)E.samples * (1000.0f / SR));
-    E.last_kick = beat && E.kick;
-    if (!E.active && !E.kick && !E.side)
+    E.last_step_ms = now_ms();
+    E.last_kick = kick;
+    if (!need_run())
         E.running = 0;
 }
 
@@ -256,7 +360,8 @@ static void chord_cmd(const float *notes, float bass, float glide)
         E.fade_left = 0.0f;
         E.pending = 0;
         if (E.rh.hold) hit(1.0f, 1e9f, 0.0f);
-        else if (!E.running) start_transport();
+        if (E.bmotif == MOTIF_TENUE) bass_hit(1e9f, 0);
+        check_run();
         return;
     }
     if (gc >= 1.0f) { set_notes(notes, bass, gc); return; }
@@ -281,23 +386,37 @@ static void run_commands(void)
             E.rh = c->u.r;
             if (E.active) {
                 if (E.rh.hold) hit(1.0f, 1e9f, 0.0f);
-                else { E.gate_left = 0.0f; if (!E.running) start_transport(); }
+                else E.gate_left = 0.0f;
             }
+            check_run();
             break;
         case CMD_CHORD: chord_cmd(c->u.c.notes, c->u.c.bass, c->u.c.glide); break;
         case CMD_STOP:
             E.active = 0;
             if (E.stage >= 1 && E.stage <= 3) E.gate_left = 0.0f;
-            if (!E.kick && !E.side) E.running = 0;
+            if (E.bstage >= 1 && E.bstage <= 2) E.bgate = 0.0f;
+            check_run();
             break;
         case CMD_PARAMS:
             E.bpm = c->u.p.bpm; E.cut = c->u.p.cut; E.q = c->u.p.q;
-            E.kick = c->u.p.kick; E.side = c->u.p.side; E.bass_on = c->u.p.bass_on;
-            if (!E.active && !E.kick && !E.side) E.running = 0;
-            if ((E.kick || E.side) && !E.running) start_transport();
+            E.side = c->u.p.side; E.drums_on = c->u.p.drums;
+            check_run();
             E.dl_time = fm_minf(0.75f * 60.0f / E.bpm * SR, (float)(DL_N - 2u));
             break;
-        case CMD_FX: E.rev = c->u.f.rev; E.del = c->u.f.del; break;
+        case CMD_FX: E.rev = c->u.f.rev; E.del = c->u.f.del; E.trem = c->u.f.trem; E.tape = c->u.f.tape; break;
+        case CMD_GROOVE:
+            E.swing = c->u.g.swing * 0.3f; E.dens = c->u.g.dens;
+            E.gatem = 0.2f + 1.6f * c->u.g.gate; E.strum = c->u.g.strum;
+            break;
+        case CMD_DRUMS: E.dr = c->u.d.d; E.dk = c->u.d.k; E.dh = c->u.d.h; E.dr_l = c->u.d.r; break;
+        case CMD_BASS: {
+            uint8_t was = E.bmotif;
+            E.bsound = c->u.b.sound; E.bmotif = c->u.b.motif; E.blevel = c->u.b.level;
+            E.bcut = 55.0f * fm_exp2f(c->u.b.cut * 6.6f);        /* 55 Hz .. 5.4 kHz */
+            if (E.active && E.bmotif == MOTIF_TENUE && was != MOTIF_TENUE) bass_hit(1e9f, 0);
+            check_run();
+            break;
+        }
         case CMD_PANIC: E.active = 0; E.running = 0; E.e = 0.0f; E.stage = 0; break;
         }
         __asm__ volatile("" ::: "memory");
@@ -313,6 +432,7 @@ void eng_init(void)
     zero(ch_buf, sizeof ch_buf);
     zero(dl_buf, sizeof dl_buf);
     zero(rv_pre, sizeof rv_pre);
+    zero(tp_buf, sizeof tp_buf);
     for (i = 0; i < 4; i++) {
         zero(rv_line[i], RV_LEN[i] * sizeof(float));
         zero(ap_buf[i], AP_LEN[i] * sizeof(float));
@@ -327,8 +447,10 @@ void eng_init(void)
     E.cut = 3800.0f; E.q = 1.0f; E.bpm = 118.0f;
     E.rh.hold = 1;
     E.fade_len = 0.004f * SR;
-    E.bass_on = 1;
     E.last_step = -1;
+    E.gatem = 1.0f;
+    E.bsound = BASS_ROND; E.blevel = 0.6f; E.bcut = 600.0f;
+    for (i = 0; i < 4; i++) E.sg[i] = 1.0f;
     E.dl_time = 0.75f * 60.0f / 118.0f * SR;
     E.p.engine = ENGINE_SUB; E.p.sus = 1.0f; E.p.atk = 0.01f; E.p.rel = 0.5f; E.p.dec = 0.3f; E.p.level = 1.0f;
     E.p.bass = 0.45f; E.p.mix2 = 0.5f; E.p.ratio = 1.0f; E.p.idx = 1.0f; E.p.idec = 0.4f; E.p.bright = 0.6f;
@@ -405,6 +527,21 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                 }
             }
             binc = mtof(E.bm) / SR;
+            {   /* the bass's filter, its envelope, tape and tremolo phases for this chunk */
+                int bs = E.bsound;
+                float famt = bs == BASS_ACID ? 3.6f : bs == BASS_PLUCK ? 2.6f : bs == BASS_FM ? 0.0f : 0.6f;
+                float tau = bs == BASS_ACID ? 0.16f : bs == BASS_PLUCK ? 0.09f : 0.25f;
+                float bfc = fm_minf(SR * 0.45f, E.bcut * fm_exp2f(famt * E.bfenv));
+                E.bg = fm_tanf(3.14159265f * bfc / SR);
+                E.bk = bs == BASS_ACID ? 0.18f : bs == BASS_REESE ? 0.9f : 1.3f;
+                E.bfenv *= fm_expf(-(float)cn / (tau * SR));
+                if (E.bfenv < 1e-5f) E.bfenv = 0.0f;
+                E.bic1 = fm_flush(E.bic1); E.bic2 = fm_flush(E.bic2); E.tp_lp = fm_flush(E.tp_lp);
+                E.h_lp = fm_flush(E.h_lp); E.h_lp2 = fm_flush(E.h_lp2);
+                E.tp_ph1 += 0.55f * (float)cn / SR; if (E.tp_ph1 >= 1.0f) E.tp_ph1 -= 1.0f;
+                E.tp_ph2 += 6.5f * (float)cn / SR; if (E.tp_ph2 >= 1.0f) E.tp_ph2 -= 1.0f;
+                E.tr_ph += E.bpm * (2.0f / 60.0f) * (float)cn / SR; if (E.tr_ph >= 1.0f) E.tr_ph -= 1.0f;
+            }
             E.ic1 = fm_flush(E.ic1); E.ic2 = fm_flush(E.ic2); E.dl_lp = fm_flush(E.dl_lp);
             E.rv_hpl = fm_flush(E.rv_hpl); E.rv_hpr = fm_flush(E.rv_hpr); E.k_tail = fm_flush(E.k_tail);
             E.duck = fm_flush(E.duck);
@@ -418,7 +555,7 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
             ch2 = (0.019f + 0.0028f * fm_sin_turns(E.ch_ph2)) * SR;
 
             for (s = c0; s < c0 + cn; s++) {
-                float sum = 0.0f, y, bass, kv = 0.0f, fade = 1.0f, l, r;
+                float sum = 0.0f, y, bass, kv = 0.0f, fade = 1.0f, l, r, dh_l, dh_r;
                 float susL = p->sus * E.vel;
                 /* transport */
                 if (E.running) {
@@ -476,15 +613,20 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                 /* voices */
                 for (i = 0; i < 4; i++) {
                     voice_t *v = &E.v[i];
+                    float vo;
+                    if (E.sdel[i] > 0.0f) {         /* strum: this voice waits its turn */
+                        E.sdel[i] -= 1.0f;
+                        if (E.sdel[i] <= 0.0f && eng == ENGINE_PLUCK) excite(v, p->bright);
+                    }
                     if (eng == ENGINE_SUB) {
-                        sum += osc(p->w1, v->p1, inc1[i]) + p->mix2 * osc(p->w2, v->p2, inc2[i]);
+                        vo = osc(p->w1, v->p1, inc1[i]) + p->mix2 * osc(p->w2, v->p2, inc2[i]);
                         v->p1 += inc1[i]; if (v->p1 >= 1.0f) v->p1 -= 1.0f;
                         v->p2 += inc2[i]; if (v->p2 >= 1.0f) v->p2 -= 1.0f;
                     } else if (eng == ENGINE_FM) {
                         float idx = p->idx * (p->isus + (1.0f - p->isus) * E.ienv);
                         float mod = fm_sin_turns(v->pm + p->fb * v->prev * 0.15915494f) * idx;
                         v->prev = mod;
-                        sum += fm_sin_turns(v->pc + mod * 0.15915494f);
+                        vo = fm_sin_turns(v->pc + mod * 0.15915494f);
                         v->pc += incc[i]; if (v->pc >= 1.0f) v->pc -= 1.0f;
                         v->pm += incm[i]; if (v->pm >= 1.0f) v->pm -= 1.0f;
                     } else {
@@ -493,8 +635,13 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                         b[v->w] = p->damp * 0.5f * (x + v->last) + 1e-15f;
                         v->last = x;
                         v->w = (v->w + 1u) & (KS_N - 1u);
-                        sum += x;
+                        vo = x;
                     }
+                    if (E.sg[i] < 1.0f) {
+                        if (E.sdel[i] <= 0.0f) E.sg[i] = fm_minf(1.0f, E.sg[i] + 0.004f);
+                        vo *= E.sg[i];
+                    }
+                    sum += vo;
                 }
                 sum += p->noise * rnd() * 4.0f;
                 /* filter: TPT state-variable lowpass */
@@ -505,12 +652,56 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                     E.ic2 = 2.0f * v2 - E.ic2;
                     sum = v2;
                 }
-                /* bass: triangle + sine an octave down */
-                bass = E.bass_on ? ((1.0f - 4.0f * fm_fabsf(E.bp - 0.5f)) * 0.55f + fm_sin_turns(E.bs) * 0.8f) * p->bass
-                                 : 0.0f;
-                E.bp += binc; if (E.bp >= 1.0f) E.bp -= 1.0f;
-                E.bs += binc * 0.5f; if (E.bs >= 1.0f) E.bs -= 1.0f;
-                y = (sum * lvl + bass * 0.2f) * E.e * fade;
+                /* bass: its own sound and filter; on SUIT it follows the chords' envelope, otherwise its own */
+                bass = 0.0f;
+                if (E.bsound != BASS_OFF) {
+                    float bi = binc * (E.boct ? 2.0f : 1.0f), o, amp;
+                    switch (E.bsound) {
+                    case BASS_SUB: o = fm_sin_turns(E.bp) * 0.85f + fm_sin_turns(E.bs) * 0.55f; break;
+                    case BASS_ROND: o = (1.0f - 4.0f * fm_fabsf(E.bp - 0.5f)) * 0.55f + fm_sin_turns(E.bs) * 0.8f; break;
+                    case BASS_ACID: o = osc(W_SAW, E.bp, bi) * 0.9f; break;
+                    case BASS_REESE: o = (osc(W_SAW, E.bp, bi) + osc(W_SAW, E.b2, bi * 1.007f)) * 0.5f; break;
+                    case BASS_PLUCK: o = osc(W_SQUARE, E.bp, bi) * 0.45f + fm_sin_turns(E.bs) * 0.6f; break;
+                    default: o = fm_sin_turns(E.bp + (0.1f + 0.35f * E.bfenv) * fm_sin_turns(E.bp)) * 1.1f; break;
+                    }
+                    E.bp += bi; if (E.bp >= 1.0f) E.bp -= 1.0f;
+                    E.bs += bi * 0.5f; if (E.bs >= 1.0f) E.bs -= 1.0f;
+                    E.b2 += bi * 1.007f; if (E.b2 >= 1.0f) E.b2 -= 1.0f;
+                    {
+                        float g = E.bg, a1 = 1.0f / (1.0f + g * (g + E.bk)), a2 = g * a1, a3 = g * a2;
+                        float v3 = o - E.bic2, v1 = a1 * E.bic1 + a2 * v3, v2 = E.bic2 + a2 * E.bic1 + a3 * v3;
+                        E.bic1 = 2.0f * v1 - E.bic1;
+                        E.bic2 = 2.0f * v2 - E.bic2;
+                        o = v2;
+                    }
+                    if (E.bmotif == MOTIF_SUIT) amp = E.e * fade;
+                    else {
+                        int perc = E.bsound == BASS_ACID || E.bsound == BASS_PLUCK || E.bsound == BASS_FM;
+                        switch (E.bstage) {
+                        case 1: E.be += 1.0f / (0.003f * SR); if (E.be >= 1.0f) { E.be = 1.0f; E.bstage = 2; } break;
+                        case 2: if (perc) E.be *= 0.99987f; break;               /* ~0.18 s */
+                        case 3: E.be *= 0.99943f; if (E.be < 1e-5f) { E.be = 0.0f; E.bstage = 0; } break;   /* ~40 ms */
+                        default: break;
+                        }
+                        if (E.bstage == 1 || E.bstage == 2) { E.bgate -= 1.0f; if (E.bgate <= 0.0f) E.bstage = 3; }
+                        amp = E.be;
+                    }
+                    bass = o * amp * E.blevel * 0.75f;
+                }
+                y = (sum * lvl * E.e * fade) + bass * 0.2f;
+                /* tape: wow and flutter, saturation, a duller top, a little hiss */
+                if (E.tape > 0.001f) {
+                    float T = E.tape, mix = fm_minf(1.0f, T * 6.0f), d, w;
+                    tp_buf[E.tp_w] = y;
+                    d = (0.006f + T * (0.0024f * fm_sin_turns(E.tp_ph1) + 0.00035f * fm_sin_turns(E.tp_ph2))) * SR;
+                    w = rd_line(tp_buf, TP_N, E.tp_w, d);
+                    E.tp_w = (E.tp_w + 1u) & (TP_N - 1u);
+                    y += (w - y) * mix;
+                    y = fm_tanhf(y * (1.0f + 3.0f * T)) / (1.0f + 2.2f * T);
+                    E.tp_lp += (1.0f - 0.62f * T) * (y - E.tp_lp);
+                    y = E.tp_lp + T * 0.0025f * rnd();
+                }
+                if (E.trem > 0.001f) y *= 1.0f - E.trem * (0.5f + 0.5f * fm_sin_turns(E.tr_ph));
                 /* kick: short, dry, no click */
                 if (E.k_amp > 1e-4f) {
                     float f = 62.0f + 95.0f * E.k_pitch;
@@ -523,7 +714,27 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                 }
                 E.k_tail *= tailC;
                 E.k_last = kv;
-                kv = (kv + E.k_tail) * 0.5f;
+                kv = (kv + E.k_tail) * 0.5f * E.k_gain;
+                /* hi-hat: high-passed noise; rim: two short tones and a click */
+                {
+                    float hv = 0.0f, rv = 0.0f;
+                    if (E.h_env > 1e-4f) {
+                        float nz = rnd(), hp;
+                        E.h_lp += 0.55f * (nz - E.h_lp);
+                        hp = nz - E.h_lp;
+                        E.h_lp2 += 0.5f * (hp - E.h_lp2);
+                        hv = (hp - 0.3f * E.h_lp2) * E.h_env * E.h_gain * 0.3f;
+                        E.h_env *= E.h_dec;
+                    }
+                    if (E.r_env > 1e-4f) {
+                        E.r_ph1 += 1720.0f / SR; if (E.r_ph1 >= 1.0f) E.r_ph1 -= 1.0f;
+                        E.r_ph2 += 480.0f / SR; if (E.r_ph2 >= 1.0f) E.r_ph2 -= 1.0f;
+                        rv = (fm_sin_turns(E.r_ph1) * 0.55f + fm_sin_turns(E.r_ph2) * 0.45f + rnd() * 0.25f * E.r_env)
+                             * E.r_env * E.r_gain * 0.35f;
+                        E.r_env *= 0.99717f;                       /* ~8 ms */
+                    }
+                    dh_l = hv * 0.85f + rv; dh_r = hv + rv * 0.85f;
+                }
                 /* sidechain */
                 if (E.duck_atk) { E.duck += (1.0f - E.duck) * duckA; if (E.duck > 0.985f) E.duck_atk = 0; }
                 else E.duck *= duckC;
@@ -579,9 +790,9 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                         orr -= E.rv_hpr;
                         {
                             float dk = fm_minf(1.0f, E.duck * 1.1f), sh = dk * dk * (3.0f - 2.0f * dk);
-                            float dg = E.side ? 1.0f - 0.8f * sh : 1.0f;
-                            l = (l * dry + dlo + ol) * dg + kv;
-                            r = (r * dry + dro + orr) * dg + kv;
+                            float dg = 1.0f - 0.85f * E.side * sh;
+                            l = (l * dry + dlo + ol) * dg + kv + dh_l;
+                            r = (r * dry + dro + orr) * dg + kv + dh_r;
                         }
                     }
                 }
