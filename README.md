@@ -67,7 +67,6 @@ En local (Linux x86-64) :
   chorus, delay, reverb)
 - `data.h` : sons, rythmes et grilles, générés depuis le prototype (`node tools/gen_data.mjs`)
 - `prototype/` : le prototype navigateur d'origine
-- `web/emu/` : la page navigateur du vrai firmware
 
 ## Charge processeur
 
@@ -86,5 +85,5 @@ OSR-1 est un logiciel libre sous **GPL-3.0-only** (voir `LICENSE`). Le code rest
 modifier et le redistribuer sous la même licence. Il peut donc reprendre du code d'autres firmwares FM-1 sous GPL
 (Felucca, Clipper...) ; chaque emprunt est crédité dans `CREDITS.md`.
 
-Les fichiers de fm1-base et felucca-bsp restent sous MPL-2.0 (compatible avec la GPL), `web/emu/worklet.js` aussi
+Les fichiers de fm1-base et felucca-bsp restent sous MPL-2.0 (compatible avec la GPL)
 (repris de fm1-base). Le paquet installable contient trois fichiers du SDK AC79 de JieLi (Apache-2.0).
