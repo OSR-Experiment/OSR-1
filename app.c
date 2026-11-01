@@ -1114,39 +1114,50 @@ static int title_dot(int cx, int cy)       /* the title's dot under a big pixel 
     col = (lx % 17) / 3;
     return (TITLE_FONT[letter][row] >> (4 - col)) & 1;
 }
-/* BY OBSIMO under it, the same lights, one big pixel a dot: the letters drop in one after the other, 1 s after */
-static const char BYLINE[] = "BY OBSIMO";
-static const uint8_t BY_FONT[6][7] = {
-    {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E},   /* B */
-    {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04},   /* Y */
-    {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},   /* O */
-    {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E},   /* S */
-    {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E},   /* I */
-    {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11},   /* M */
+/* the lines under it, in the same lights (one big pixel a dot): BY OBSIMO a second after BLOP, and while HOME
+ * is held GO STREAM MY MUSIC ;) after it; the letters drop in one after the other */
+static const struct { char ch; uint8_t rows[7]; } GLYPH[] = {
+    {'B', {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}}, {'Y', {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04}},
+    {'O', {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}}, {'S', {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}},
+    {'I', {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}}, {'M', {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11}},
+    {'G', {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F}}, {'T', {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}},
+    {'R', {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}}, {'E', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}},
+    {'A', {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}}, {'U', {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+    {'C', {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}}, {';', {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x04, 0x08}},
+    {')', {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08}},
 };
-#define BY_X 13
-#define BY_Y 41
-static int by_glyph(char ch) { return ch == 'B' ? 0 : ch == 'Y' ? 1 : ch == 'O' ? 2 : ch == 'S' ? 3 : ch == 'I' ? 4 : 5; }
-static int by_dot(int cx, int cy)
+static const struct { const char *s; int x, y; float t0; uint8_t home_only; } LINE[3] = {
+    {"BY OBSIMO", 13, 41, 1000.0f, 0}, {"GO STREAM", 13, 52, 1900.0f, 1}, {"MY MUSIC ;)", 7, 61, 2460.0f, 1},
+};
+static const uint8_t *glyph_rows(char ch)
 {
-    int lx = cx - BY_X, i = lx / 6, n = 0, k, row;
+    uint32_t i;
+    for (i = 0; i < sizeof GLYPH / sizeof GLYPH[0]; i++) if (GLYPH[i].ch == ch) return GLYPH[i].rows;
+    return 0;
+}
+static int line_dot(int l, int cx, int cy)
+{
+    const char *s = LINE[l].s;
+    int lx = cx - LINE[l].x, i = lx / 6, n = 0, k, row;
+    const uint8_t *g;
     float p, oy, q;
-    if (lx < 0 || i >= 9 || lx % 6 >= 5 || BYLINE[i] == ' ') return 0;
-    for (k = 0; k < i; k++) if (BYLINE[k] != ' ') n++;
-    p = (sc.title_ms - 1000.0f - 70.0f * (float)n) / 320.0f;        /* each letter's drop, 70 ms apart */
+    if (lx < 0 || lx % 6 >= 5) return 0;
+    for (k = 0; k < i; k++) { if (!s[k]) return 0; if (s[k] != ' ') n++; }
+    if (!s[i] || s[i] == ' ' || !(g = glyph_rows(s[i]))) return 0;
+    p = (sc.title_ms - LINE[l].t0 - 70.0f * (float)n) / 320.0f;     /* each letter's drop, 70 ms apart */
     if (p <= 0.0f) return 0;
     if (p > 1.0f) p = 1.0f;
     q = p - 1.0f;                                                    /* ease out, a little bounce */
     oy = -14.0f * (1.0f - (1.0f + 2.7f * q * q * q + 1.7f * q * q));
-    row = cy - BY_Y - (int)(oy + (oy < 0.0f ? -0.5f : 0.5f));
+    row = cy - LINE[l].y - (int)(oy + (oy < 0.0f ? -0.5f : 0.5f));
     if (row < 0 || row > 6) return 0;
-    return (BY_FONT[by_glyph(BYLINE[i])][row] >> (4 - lx % 6)) & 1;
+    return (g[row] >> (4 - lx % 6)) & 1;
 }
 
 static void title_light(int cx, int cy, float *c)
 {
     float k = sc.title, g = 0.0f;
-    int dx, dy;
+    int dx, dy, l;
     if (cx >= TITLE_X - 2 && cx <= TITLE_X + 68 && cy >= TITLE_Y - 2 && cy <= TITLE_Y + 26) {   /* BLOP */
         if (title_dot(cx, cy)) g = 1.0f;
         else
@@ -1154,12 +1165,14 @@ static void title_light(int cx, int cy, float *c)
                 for (dx = -1; dx <= 1; dx++)
                     if (title_dot(cx + dx, cy + dy)) g = fm_maxf(g, 0.3f);
     }
-    if (g < 1.0f && cy >= BY_Y - 16 && cy <= BY_Y + 8 && cx >= BY_X - 1 && cx <= BY_X + 54) {   /* BY OBSIMO */
-        if (by_dot(cx, cy)) g = 1.0f;
+    for (l = 0; l < 3 && g < 1.0f; l++) {                                                      /* the lines */
+        if (LINE[l].home_only && !ui.help) continue;
+        if (cy < LINE[l].y - 16 || cy > LINE[l].y + 8 || cx < LINE[l].x - 1 || cx > LINE[l].x + 66) continue;
+        if (line_dot(l, cx, cy)) g = 1.0f;
         else
             for (dy = -1; dy <= 1; dy++)
                 for (dx = -1; dx <= 1; dx++)
-                    if (by_dot(cx + dx, cy + dy)) g = fm_maxf(g, 0.3f);
+                    if (line_dot(l, cx + dx, cy + dy)) g = fm_maxf(g, 0.3f);
     }
     c[0] *= 1.0f - 0.6f * k; c[1] *= 1.0f - 0.6f * k; c[2] *= 1.0f - 0.6f * k;
     c[0] += k * g * 1.1f; c[1] += k * g * 0.86f; c[2] += k * g * 0.45f;
@@ -1487,13 +1500,6 @@ static void draw_bottom_text(void)       /* in the second canvas: y 0 = screen r
     }
 }
 
-/* ---- the title's small lines: by Obsimo, go stream */
-static void draw_title_text(int half)
-{
-    if (half == 1 && ui.help && sc.title_ms > 1800.0f)
-        cv_text(120 - text_w(&FONT_XS, "GO STREAM MY MUSIC ;)") / 2, 196 - 120, &FONT_XS, "GO STREAM MY MUSIC ;)",
-                RGB(220, 214, 230));
-}
 
 void app_ui_init(void)
 {
@@ -1514,13 +1520,11 @@ void app_frame(void)
         scene_step(now, dt);
         cv_begin(240, 120, 0);
         draw_cells(0);
-        if (sc.title > 0.5f) draw_title_text(0);
-        else if (!ui.clean) draw_top_text();
+        if (sc.title < 0.5f && !ui.clean) draw_top_text();
         cv_blit(0, 0);
         cv_begin(240, 120, 0);
         draw_cells(40);
-        if (sc.title > 0.5f) draw_title_text(1);
-        else if (!ui.clean) draw_bottom_text();
+        if (sc.title < 0.5f && !ui.clean) draw_bottom_text();
         cv_blit(0, 120);
     }
     ann_tick(now);

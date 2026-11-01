@@ -342,8 +342,8 @@ static float step_len(int i)
 
 static void start_transport(void) { E.running = 1; E.step = 0; E.step_left = 0.0f; }
 
-/* the transport runs while chords play a rhythm (or the bass a motif), or the drums play */
-static int need_run(void) { return E.active && (!E.rh.hold || E.bmotif >= MOTIF_CONTRE || E.drums_on); }
+/* the transport runs while chords play a rhythm (with the drums), or the bass a motif */
+static int need_run(void) { return E.active && (!E.rh.hold || E.bmotif >= MOTIF_CONTRE); }   /* rhythm OFF: no drums */
 static void check_run(void)
 {
     if (need_run()) { if (!E.running) start_transport(); }
@@ -370,7 +370,7 @@ static void on_step(void)
 {
     int i = E.step, kick = 0;
     float sl = step_len(i);
-    if (E.drums_on && E.active) {
+    if (E.drums_on && E.active && !E.rh.hold) {      /* the drums play with a rhythm only */
         if (E.dr.k[i] > 0.0f) {
             E.k_tail = E.k_last; E.k_ph = 0.0f; E.k_amp = 1.0f; E.k_pitch = 1.0f;
             E.k_gain = E.dr.k[i] * E.dk;
