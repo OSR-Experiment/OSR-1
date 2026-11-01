@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records) */
-/* OSR-1: one-finger chord grids, chord rhythms, kick and sidechain, for the M-VAVE FM-1 (on fm1-base).
+/* BLOP by Obsimo: one-finger chord grids, chord rhythms, kick and sidechain, for the M-VAVE FM-1 (on fm1-base).
  * This header is the app's half of the contract with the platform (device/unity.c, host/plat_host.c). */
 #pragma once
 #include <stdint.h>
 #include "plat.h"
 
-#define APP_NAME "OSR-1"
+#define APP_NAME "BLOP"
 #define APP_SPLASH_RGB RGB(255, 154, 92)
 #define APP_BLOCK 256u                   /* frames per audio block: 5.8 ms at 44.1 kHz */
 

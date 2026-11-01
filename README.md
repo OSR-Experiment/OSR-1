@@ -1,4 +1,4 @@
-# OSR-1
+# Blop (by Obsimo)
 
 Firmware pour le synthé M-VAVE FM-1 : grilles d'accords jouables à un doigt, rythmes d'accords, kick et
 sidechain, glide, reverb. Par Obsimo / OSR Records. Construit sur [fm1-base](https://github.com/charlesvestal/fm1-base)
@@ -47,14 +47,14 @@ l'accord et la basse, canal 1, avec le rythme, le strum, le latch et le glide (l
 ## Fabriquer le firmware
 
 Le plus simple : pousser ce dépôt sur GitHub. Le workflow `.github/workflows/build.yml` télécharge l'outil de
-compilation de JieLi et le SDK AC79, lance les tests du simulateur, puis fabrique `build/osr1.fwsc`. Le fichier se
+compilation de JieLi et le SDK AC79, lance les tests du simulateur, puis fabrique `build/blop.fwsc`. Le fichier se
 récupère dans l'onglet Actions, rubrique « Artifacts ».
 
 En local (Linux x86-64) :
 
     git clone --recursive <ce dépôt> && cd osr1
     python3 fm1-base/tools/build.py . --host            # simulateur
-    build/host/osr1_host tests/basic.txt build/host      # tests, captures d'écran, sons
+    build/host/blop_host tests/basic.txt build/host      # tests, captures d'écran, sons
     fm1-base/tools/get_toolchain.sh && fm1-base/bsp/tools/get_sdk.sh
     JIELI_TOOLCHAIN=~/.jieli/toolchain AC79_SDK=~/.jieli/ac79-sdk python3 fm1-base/tools/build.py .
     tools/build_web.sh                                   # version navigateur (Zig)
@@ -70,14 +70,14 @@ En local (Linux x86-64) :
 
 ## Charge processeur
 
-Firmware réel (`OSR-1.fwsc`) lancé dans l'émulateur de la puce [fm1-emu](https://github.com/joakimeriksson/fm1-emu)
+Firmware réel (`Blop.fwsc`) lancé dans l'émulateur de la puce [fm1-emu](https://github.com/joakimeriksson/fm1-emu)
 (horloge émulée à 240 MHz) : **18 à 19 % du temps dans l'interruption audio**, accord tenu (son SIROP), kick et
 sidechain compris. Le vrai FM-1 tourne vers 360 MHz. Il reste donc beaucoup de marge (reverb plus riche, plus de voix).
 À confirmer sur la machine (`plat_cpu_pct`).
 
 ## Télécharger
 
-La dernière version compilée est sur la page **Releases** du dépôt (`OSR-1.fwsc`, pas encore testée sur un vrai FM-1).
+La dernière version compilée est sur la page **Releases** du dépôt (`Blop.fwsc`, pas encore testée sur un vrai FM-1).
 
 ## Licence
 

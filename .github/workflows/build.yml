@@ -1,4 +1,4 @@
-# Builds the OSR-1 firmware (.fwsc, installable on an FM-1) on GitHub's machines, which can reach JieLi's
+# Builds the Blop firmware (.fwsc, installable on an FM-1) on GitHub's machines, which can reach JieLi's
 # toolchain server. Also runs the host simulator's tests.
 # Result: Actions tab > the run > "Artifacts" > osr1-firmware.
 name: Build firmware
@@ -28,7 +28,7 @@ jobs:
       - name: Host simulator tests
         run: |
           python3 fm1-base/tools/build.py . --host
-          build/host/osr1_host tests/basic.txt build/host
+          build/host/blop_host tests/basic.txt build/host
 
       - name: JieLi toolchain
         run: fm1-base/tools/get_toolchain.sh "$HOME/.jieli"
@@ -71,11 +71,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           F=$(ls build/*.fwsc | head -1)
-          cp "$F" OSR-1.fwsc
+          cp "$F" Blop.fwsc
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest OSR-1.fwsc --prerelease --title "OSR-1 - derniere version (non testee sur un FM-1)" \
+          gh release create latest Blop.fwsc --prerelease --title "Blop by Obsimo - derniere version" \
             --notes "Compile automatiquement depuis ${GITHUB_SHA::7}. Pas encore teste sur un vrai FM-1 : a essayer d'abord dans un emulateur."
-          mkdir out && cp OSR-1.fwsc out/ && cd out
+          mkdir out && cp Blop.fwsc out/ && cd out
           echo "$GITHUB_SHA" > COMMIT
           git init -q -b builds && git add . 
           git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "build ${GITHUB_SHA::7}"
@@ -92,18 +92,18 @@ jobs:
           python3 fm1-base/tools/build.py . --release "$V"
           pip install -q ziglang
           tools/build_web.sh
-          python3 fm1-base/tools/make_site.py . "build/osr1-$V.fwsc" "$V" build/site
+          python3 fm1-base/tools/make_site.py . "build/blop-$V.fwsc" "$V" build/site
           cd build/site
           git init -q -b gh-pages && git add -A
-          git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "Site for OSR-1 $V (${GITHUB_SHA::7})"
+          git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "Site for Blop $V (${GITHUB_SHA::7})"
           git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
           gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null 2>&1 || echo "(Pages not on yet)"
-          echo "::notice title=site::OSR-1 $V on gh-pages"
+          echo "::notice title=site::Blop $V on gh-pages"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: osr1-firmware
+          name: blop-firmware
           path: |
             build/*.fwsc
             build/*.bin

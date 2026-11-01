@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records) */
-/* OSR-1 app: input, pages, chord grids, the aquarium screen, settings. Part of the unity build (device/unity.c,
+/* BLOP (by Obsimo) app: input, pages, chord grids, the aquarium screen, settings. Part of the unity build (device/unity.c,
  * host/plat_host.c), after the platform: gfx.c and announce.c are in scope. The sound is dsp/engine.c.
  *
  * Controls
@@ -17,7 +17,7 @@
  *                   LFO   bass: sound, level, motif, filter
  *                   EDIT  decor: creature, eyes, background, accessory
  *                   GLO   drums: pattern (each with its own kit), kick, hi-hat, rim
- *   bottom row      HOME  back to the main page (held: the help screen)
+ *   bottom row      HOME  back to the main page (held: the title, BLOP by Obsimo)
  *                   SAVE  step back: the creature in its bowl, the music heard from outside the room
  *                   ARP   the aquarium's light   SEQ  a pirouette   PLAY  hide the info (just the picture)
  *                   REC   feed it
@@ -286,7 +286,7 @@ static void send_bass(void) { eng_bass(set.bsound, set.bmotif, (float)set.blevel
 
 /* ------------------------------------------------------------------ playing --- */
 static int cur_idx = -1, held_idx = -1, active;
-static char chord_txt[16] = "OSR-1";
+static char chord_txt[16] = "BLOP";
 /* the voices' pitches for the screen, as the engine glides them */
 static struct { float from, to; uint32_t t0, dur; } vis[5];
 
@@ -623,7 +623,7 @@ void app_input_only(void) { input(); }
  * It swims to the chord (left/right = the key, up/down = the pitch, gliding with GLIDE), puffs up on the
  * rhythm's hits, is squashed by the sidechain, each kick sends a ripple. The water changes colour with the
  * chords. CUTOFF: bright or murky water; REVERB: glowing specks; DELAY: echoes of the creature.
- * The bottom row plays with it: the bowl (SAVE), the light (ARP), a pirouette (SEQ), no info (PLAY),
+ * At the start, and while HOME is held: the title, BLOP by Obsimo. The bottom row plays with it: the bowl (SAVE), the light (ARP), a pirouette (SEQ), no info (PLAY),
  * food (REC). Info on two translucent bands. Each half (240 x 120) is drawn into the
  * canvas and sent, ~25 times a second. */
 #define NC 80                            /* big pixels a side */
@@ -710,7 +710,7 @@ static struct {
     uint32_t rnd;
     float zoom, dark;                    /* bowl view 0..1, light off 0..1 */
     /* per frame, for the cells */
-    float rim, R, sq, sx, ripple_r, ripple_a, bright, eye_r, rot, rc, rs, bands, ecol[3];
+    float title, rim, R, sq, sx, ripple_r, ripple_a, bright, eye_r, rot, rc, rs, bands, ecol[3];
     int eye_state;
     float eyes[2][2], tip[2];
     uint8_t has_tip;
@@ -1095,6 +1095,42 @@ static void room(float sx, float sy, float s, float *c)
     c[0] *= 1.0f - 0.85f * sc.dark; c[1] *= 1.0f - 0.85f * sc.dark; c[2] *= 1.0f - 0.85f * sc.dark;
 }
 
+/* the title, BLOP: a 5 x 7 font, each dot 3 x 3 big pixels, the letters bobbing */
+static const uint8_t TITLE_FONT[4][7] = {
+    {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E},   /* B */
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F},   /* L */
+    {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},   /* O */
+    {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10},   /* P */
+};
+#define TITLE_X 7
+#define TITLE_Y 11
+static int title_dot(int cx, int cy)       /* the title's dot under a big pixel (0 / 1) */
+{
+    int lx = cx - TITLE_X, letter = lx / 17, col, row, oy;
+    if (lx < 0 || letter > 3 || lx % 17 >= 15) return 0;
+    oy = (int)(1.5f * sinr(sc.t * 4.0f + (float)letter * 1.2f) + 1.5f);
+    row = (cy - TITLE_Y - oy) / 3;
+    if (cy - TITLE_Y - oy < 0 || row > 6) return 0;
+    col = (lx % 17) / 3;
+    return (TITLE_FONT[letter][row] >> (4 - col)) & 1;
+}
+static void title_light(int cx, int cy, float *c)
+{
+    float k = sc.title, g = 0.0f;
+    int dx, dy;
+    if (cx < TITLE_X - 2 || cx > TITLE_X + 68 || cy < TITLE_Y - 2 || cy > TITLE_Y + 26) {
+        c[0] *= 1.0f - 0.6f * k; c[1] *= 1.0f - 0.6f * k; c[2] *= 1.0f - 0.6f * k;
+        return;
+    }
+    if (title_dot(cx, cy)) g = 1.0f;
+    else
+        for (dy = -1; dy <= 1; dy++)
+            for (dx = -1; dx <= 1; dx++)
+                if (title_dot(cx + dx, cy + dy)) g = fm_maxf(g, 0.3f);
+    c[0] *= 1.0f - 0.6f * k; c[1] *= 1.0f - 0.6f * k; c[2] *= 1.0f - 0.6f * k;
+    c[0] += k * g * 1.1f; c[1] += k * g * 0.86f; c[2] += k * g * 0.45f;
+}
+
 /* one cell's colour; (sx, sy) the cell on screen */
 static void cell(int cx, int cy, float *c)
 {
@@ -1182,6 +1218,7 @@ static void cell(int cx, int cy, float *c)
             c[0] += glass * hl; c[1] += glass * hl; c[2] += glass * hl;
         }
     }
+    if (sc.title > 0.0f) title_light(cx, cy, c);
     if (sc.bands > 0.0f && (cy < BAND_TOP || cy >= BAND_BOT)) {
         float k = 1.0f - 0.7f * sc.bands;
         c[0] *= k; c[1] *= k; c[2] *= k;
@@ -1326,7 +1363,13 @@ static void scene_step(uint32_t now, float dt)
     /* bowl, light, bands, eased */
     sc.zoom += ((ui.bowl ? 1.0f : 0.0f) - sc.zoom) * fm_minf(1.0f, dt * 4.0f);
     sc.dark += ((ui.dark ? 1.0f : 0.0f) - sc.dark) * fm_minf(1.0f, dt * 5.0f);
-    sc.bands += ((ui.clean ? 0.0f : 1.0f) - sc.bands) * fm_minf(1.0f, dt * 6.0f);
+    /* the title: at the start (3.5 s, fading), and while HOME is held; the bands give way to it */
+    {
+        float tt = ui.help ? 1.0f : now < 3000u ? 1.0f : now < 3600u ? 1.0f - (float)(now - 3000u) / 600.0f : 0.0f;
+        sc.title += (tt - sc.title) * fm_minf(1.0f, dt * 8.0f);
+        if (tt >= 1.0f && now < 3000u) sc.title = 1.0f;
+    }
+    sc.bands += ((ui.clean || sc.title > 0.05f ? 0.0f : 1.0f) - sc.bands) * fm_minf(1.0f, dt * 6.0f);
     /* the delay's echoes */
     sc.ex[sc.epos] = sc.x; sc.ey[sc.epos] = sc.y;
     sc.epos = (sc.epos + 1) % 16;
@@ -1366,15 +1409,15 @@ static uint16_t page_col(void) { const uint8_t *c = PAGE_RGB[set.page]; return R
 
 static void draw_top_text(void)
 {
-    const char *chord = active ? chord_txt : (chord_txt[0] ? chord_txt : "OSR-1");
+    const char *chord = active ? chord_txt : (chord_txt[0] && strcmp(chord_txt, "OSR-1") ? chord_txt : "BLOP");
     uint32_t now = plat_ms();
     if (now < ui.msg_until) {
         int32_t x = cv_text(8, 0, &FONT_XS, ui.msg[0], RGB(200, 196, 210));
         cv_text(x + 6, 0, &FONT_XS, ui.msg[1], page_col());
-    } else if (now < 7000u || (sc.sleep_at && now - sc.sleep_at > 15000u)) {
-        /* the credit: a few seconds at the start, and while it sleeps */
-        static const char *const CREDIT[3] = {"FIRMWARE BY OBSIMO", "GO STREAM MY MUSIC ;)", "ZZZ..."};
-        int k = (int)((now / 3000u) % (now < 7000u ? 2u : 3u));
+    } else if (sc.sleep_at && now - sc.sleep_at > 15000u) {
+        /* the credit, while it sleeps */
+        static const char *const CREDIT[3] = {"BLOP BY OBSIMO", "GO STREAM MY MUSIC ;)", "ZZZ..."};
+        int k = (int)((now / 3000u) % 3u);
         cv_text(8, 0, &FONT_XS, CREDIT[k], k == 2 ? RGB(170, 166, 180) : RGB(255, 214, 110));
     } else {
         cv_text(8, 0, &FONT_XS, SOUND_NAME[set.sound], page_col());
@@ -1409,41 +1452,14 @@ static void draw_bottom_text(void)       /* in the second canvas: y 0 = screen r
     }
 }
 
-/* ---- HOME held: the help, laid out like the panel */
-static void help_box(int32_t x, int32_t y, int32_t w, int32_t h, const char *dev, const char *fn, uint16_t fc,
-                     uint16_t edge, const felucca_font_t *ff)
+/* ---- the title's small lines: by Obsimo, go stream */
+static void draw_title_text(int half)
 {
-    cv_rect(x, y, w, h, edge);
-    cv_rect(x + 1, y + 1, w - 2, h - 2, RGB(16, 14, 22));
-    cv_text(x + (w - text_w(&FONT_T, dev)) / 2, y + 3, &FONT_T, dev, RGB(150, 146, 160));
-    cv_text(x + (w - text_w(ff, fn)) / 2, y + h - ff->h - 3, ff, fn, fc);
-}
-
-static void draw_help(void)
-{
-    static const char *const ENC_DEV[3] = {"SELECT", "ALGO", "PRESET"}, *const ENC_FN[3] = {"GRID", "RHYTHM", "SOUND"};
-    static const char *const B_DEV[12] = {"FX", "SCL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC"};
-    static const char *const B_FN[12] = {"FX", "CHORDS", "GROOVE", "BASS", "DECOR", "DRUMS", "MAIN", "BOWL", "LIGHT",
-                                         "SPIN", "CLEAN", "FEED"};
-    int32_t i;
-    cv_begin(240, 120, RGB(8, 6, 12));
-    cv_text(6, 2, &FONT_XS, "HELP", RGB(255, 214, 110));
-    cv_text(234 - text_w(&FONT_XS, "RELEASE HOME"), 2, &FONT_XS, "RELEASE HOME", RGB(150, 146, 160));
-    for (i = 0; i < 3; i++)
-        help_box(6 + i * 77, 22, 74, 44, ENC_DEV[i], ENC_FN[i], RGB(120, 230, 255), RGB(50, 46, 70), &FONT_XS);
-    cv_text(6, 72, &FONT_T, "K1-K4: THE PAGE'S 4 SETTINGS (AT THE BOTTOM).", RGB(220, 216, 228));
-    cv_text(6, 86, &FONT_T, "A PAGE BUTTON AGAIN, OR HOME: MAIN PAGE.", RGB(220, 216, 228));
-    cv_text(6, 100, &FONT_T, "WITH A RHYTHM: THE SAME KEY AGAIN = STOP.", RGB(255, 214, 110));
-    cv_blit(0, 0);
-    cv_begin(240, 120, RGB(8, 6, 12));
-    for (i = 0; i < 12; i++) {
-        int page = i < 6 || i == 6;
-        help_box(4 + (i % 6) * 39, 2 + (i / 6) * 46, 37, 42, B_DEV[i], B_FN[i],
-                 page ? RGB(255, 214, 110) : RGB(150, 240, 170), page ? RGB(120, 100, 40) : RGB(40, 90, 60), &FONT_T);
-    }
-    cv_text(120 - text_w(&FONT_T, "FIRMWARE BY OBSIMO - GO STREAM MY MUSIC ;)") / 2, 100, &FONT_T,
-            "FIRMWARE BY OBSIMO - GO STREAM MY MUSIC ;)", RGB(255, 214, 110));
-    cv_blit(0, 120);
+    uint16_t c1 = RGB(255, 226, 150), c2 = RGB(220, 214, 230);
+    if (half == 0)
+        cv_text(120 - text_w(&FONT_S, "BY OBSIMO") / 2, 101, &FONT_S, "BY OBSIMO", c1);
+    else
+        cv_text(120 - text_w(&FONT_XS, "GO STREAM MY MUSIC ;)") / 2, 196 - 120, &FONT_XS, "GO STREAM MY MUSIC ;)", c2);
 }
 
 void app_ui_init(void)
@@ -1458,11 +1474,6 @@ void app_frame(void)
 {
     uint32_t now = plat_ms();
     input();
-    if (ui.help) {
-        if (!ui.help_drawn) { ui.help_drawn = 1; draw_help(); }
-        ann_tick(now);
-        return;
-    }
     if (now - ui.frame_at >= 40u) {
         float dt = ui.frame_at ? (float)(now - ui.frame_at) * 0.001f : 0.04f;
         if (dt > 0.1f) dt = 0.1f;
@@ -1470,11 +1481,13 @@ void app_frame(void)
         scene_step(now, dt);
         cv_begin(240, 120, 0);
         draw_cells(0);
-        if (!ui.clean) draw_top_text();
+        if (sc.title > 0.5f) draw_title_text(0);
+        else if (!ui.clean) draw_top_text();
         cv_blit(0, 0);
         cv_begin(240, 120, 0);
         draw_cells(40);
-        if (!ui.clean) draw_bottom_text();
+        if (sc.title > 0.5f) draw_title_text(1);
+        else if (!ui.clean) draw_bottom_text();
         cv_blit(0, 120);
     }
     ann_tick(now);

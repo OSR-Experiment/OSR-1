@@ -1,10 +1,12 @@
-# OSR-1
+# Blop
 
-OSR-1 is a firmware for the M-VAVE FM-1 by Obsimo (OSR Records): one-finger chord grids, chord rhythms, a bass with its
+*by Obsimo*
+
+Blop is a firmware for the M-VAVE FM-1 by Obsimo (OSR Records): one-finger chord grids, chord rhythms, a bass with its
 own riffs, a few discreet drums with sidechain, and a little creature that swims in an aquarium on the screen,
 following your chords.
 
-![OSR-1 on the FM-1's screen: a black pufferfish with glowing eyes in blue water, the chord Gm7 at the top, the page's four settings at the bottom](img/screen.png "OSR-1 on the FM-1's screen")
+![Blop on the FM-1's screen: a black pufferfish with glowing eyes in blue water, the chord Gm7 at the top, the page's four settings at the bottom](img/screen.png "Blop on the FM-1's screen")
 
 Version {{VERSION}}. Not yet tested on many FM-1s: installing is at your own risk; the installer can put M-VAVE's own
 firmware back.
@@ -19,4 +21,6 @@ The keys play the chords of the grid, the top row of buttons chooses what the fo
 bottom of the screen), the bottom row is for fun. Hold HOME for the help screen. The chords and the bass go out as
 MIDI over USB, channel 1.
 
-M-VAVE and FM-1 are trademarks of their owners. OSR-1 is not affiliated with M-VAVE.
+Go stream Obsimo's music ;)
+
+M-VAVE and FM-1 are trademarks of their owners. Blop is not affiliated with M-VAVE.

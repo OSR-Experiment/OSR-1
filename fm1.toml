@@ -1,15 +1,15 @@
-# OSR-1 build settings (fm1-base tools/build.py)
-name = "OSR1"
+# BLOP build settings (fm1-base tools/build.py)
+name = "BLOP"
 id_prefix = "FM-1_94"           # package identity: dev FM-1_9400 (check it is free before a public release)
 usb_manufacturer = "OSR Records"
-usb_product = "OSR-1"
+usb_product = "Blop"
 o2 = ["dsp/engine.c"]           # the sound engine, at -O2
 include = ["dsp"]
 vendored = ["fm1-base/", "prototype/"]   # fm1-base is a submodule inside the app: its own checks are its own
 words = "words.tsv"
 font_full = ["L"]               # lower case in the big font: chord names (Am7, Cmaj9, sus4)
 ble = false
-tagline = "chord grids, chord rhythms, a bass, discreet drums and an aquarium for the FM-1"
+tagline = "by Obsimo"
 repo = "https://github.com/OSR-Experiment/OSR-1"
 licence = "GPL-3.0-only"
 credits = "Built on fm1-base (Charles Vestal) and felucca-bsp (Leo Kuroshita, Hügelton Instruments)."
