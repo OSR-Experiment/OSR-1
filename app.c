@@ -598,13 +598,16 @@ static void input(void)
         if (plat_store_save(OBJ_SETTINGS, &set, sizeof set) == 0) set_dirty = 0;
         else dirty_at = plat_ms();
     }
-    /* lights: the keys glow, the one playing is lit; the page's button; the fun ones that are on */
+    /* lights: the keys glow, the one playing is lit; the page's button, the fun ones that are on, the pressed one */
     if (cur_idx >= 0) lit_keys |= 1u << (uint32_t)cur_idx;
     if (set.page != PG_MAIN) lit_btn |= 1u << PAGE_BTN[set.page];
     if (ui.bowl) lit_btn |= 1u << B_SAVE;
     if (ui.dark) lit_btn |= 1u << B_ARP;
     if (ui.clean) lit_btn |= LED_PLAY_GREEN;
+    lit_btn |= btn & ((1u << 12) - 1u);  /* a button lights fully while it is pressed */
     plat_lights(lit_btn, lit_keys, 0, (1u << NKEYS) - 1u, 1);
+    /* the 12 buttons always softly on (each has one LED colour: the active one fully lit, the others mid) */
+    plat_lights_mid(((1u << 12) - 1u) & ~lit_btn, 0);
 }
 
 void app_input_only(void) { input(); }
