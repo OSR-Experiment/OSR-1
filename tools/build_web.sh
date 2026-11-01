@@ -15,5 +15,11 @@ $ZIG cc -target wasm32-wasi -mexec-model=reactor -O2 -ffp-contract=off -std=gnu9
 # the page: fm1-base's (the FM-1 drawn as it is), with the app's name
 NAME="$(sed -n 's/^name *= *"\(.*\)"/\1/p' fm1.toml | head -1)"
 sed -e "s/{{NAME}}/$NAME/g" -e "s/{{ID}}/blop/g" $S/web/emu/index.html > build/emu/index.html
+python3 - build/emu/index.html web/emu/phone.css <<'PY'
+import sys
+p, c = sys.argv[1], open(sys.argv[2]).read()
+s = open(p).read().replace("</head>", "<style>\n" + c + "</style>\n</head>", 1)
+open(p, "w").write(s)
+PY
 cp $S/web/emu/worklet.js build/emu/
 echo "web: build/emu/ (serve it over http: python3 -m http.server -d build/emu)"

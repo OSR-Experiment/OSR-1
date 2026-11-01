@@ -1,0 +1,13 @@
+/* Blop: on a phone the whole FM-1 is in view. Upright: the full width, nothing cut off (sideways: bigger);
+   sideways: as big as the screen's height allows, the title out of the way */
+@media (orientation: portrait) and (max-width: 700px) {
+  body { padding-inline: 8px; }
+  .device { min-width: 0; }
+  .devicebox { overflow: visible; }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  body { padding-block: 6px 24px; }
+  body > header { display: none; }
+  .device { min-width: 0; width: min(100%, calc((100svh - 12px) * 1000 / 640)); margin: 0 auto; }
+  .devicebox { overflow: visible; }
+}
