@@ -1409,7 +1409,7 @@ static uint16_t page_col(void) { const uint8_t *c = PAGE_RGB[set.page]; return R
 
 static void draw_top_text(void)
 {
-    const char *chord = active ? chord_txt : (chord_txt[0] && strcmp(chord_txt, "OSR-1") ? chord_txt : "BLOP");
+    const char *chord = active ? chord_txt : (chord_txt[0] ? chord_txt : "BLOP");
     uint32_t now = plat_ms();
     if (now < ui.msg_until) {
         int32_t x = cv_text(8, 0, &FONT_XS, ui.msg[0], RGB(200, 196, 210));
