@@ -21,7 +21,8 @@
  *                   SAVE  step back: the creature in its bowl, the music heard from outside the room
  *                   ARP   the aquarium's light   SEQ  a pirouette   PLAY  hide the info (just the picture)
  *                   REC   feed it
- *   OCT- / OCT+ octave.  Settings save themselves a few seconds after the last change. */
+ *   OCT- / OCT+ octave.   HOME + REC held 3 s: back to the first-start settings (a countdown).
+ *   Settings save themselves a few seconds after the last change. */
 #include "fastmath.h"
 #include "engine.h"
 #include "data.h"
@@ -407,6 +408,8 @@ static struct {
     uint32_t keys, btn;
     uint32_t frame_at, home_at;
     uint8_t help, help_drawn, home_long;
+    uint32_t reset_at;                   /* HOME + REC held since (0: not) */
+    uint8_t reset_shown, reset_done;
     uint8_t bowl, dark, clean;           /* fun: the bowl view, the light off, no info on the screen */
 } ui;
 static void fun(int k);                  /* the bottom row (screen part) */
@@ -549,7 +552,11 @@ static void button(int k)
         ui.bowl ^= 1u;
         eng_muffle(ui.bowl ? 1.0f : 0.0f);
         return;
-    case B_ARP: case B_SEQ: case B_PLAY: case B_REC: fun(k); return;
+    case B_REC:
+        if ((ui.btn >> B_HOME) & 1u) return;      /* HOME + REC: the reset (input), not food */
+        fun(k);
+        return;
+    case B_ARP: case B_SEQ: case B_PLAY: fun(k); return;
     case B_OCTDN:
     case B_OCTUP:
         set.octave = (int8_t)clamp(set.octave + (k == B_OCTUP ? 1 : -1), -2, 2);
@@ -581,9 +588,37 @@ static void input(void)
         uint32_t bit = 1u << k;
         if ((btn & bit) && !(ui.btn & bit)) button((int)k);
     }
+    /* HOME + REC held 3 s: back to the settings of the first start (a countdown; let go before: nothing) */
+    if (((btn >> B_HOME) & 1u) && ((btn >> B_REC) & 1u)) {
+        uint32_t held;
+        char t[4];
+        if (!ui.reset_at) { ui.reset_at = now | 1u; ui.reset_shown = 0; ui.reset_done = 0; }
+        ui.home_long = 1; ui.help = 0;
+        held = now - ui.reset_at;
+        if (!ui.reset_done && held >= 3000u) {
+            uint8_t page = PG_MAIN;
+            ui.reset_done = 1;
+            if (active) stop();
+            settings_defaults();
+            set.page = page;
+            ui.bowl = ui.dark = ui.clean = 0;
+            eng_muffle(0.0f);
+            send_sound(); send_rhythm(); send_groove(); send_drums(); send_bass(); send_fx(); send_params();
+            dirty();
+            app_say("RESET", "FIRST SETTINGS BACK");
+        } else if (!ui.reset_done && ui.reset_shown != 1u + held / 1000u) {
+            ui.reset_shown = (uint8_t)(1u + held / 1000u);
+            t[0] = (char)('0' + 4 - ui.reset_shown); t[1] = 0;
+            app_say("RESET IN", t);
+        }
+    } else if (ui.reset_at) {
+        if (!ui.reset_done) app_say("RESET", "CANCELLED");
+        ui.reset_at = 0;
+    }
     /* HOME: a short press, back to the main page; held, the help screen while held */
     if ((btn >> B_HOME) & 1u) {
         if (!ui.home_long && now - ui.home_at > 600u) { ui.home_long = 1; ui.help = 1; ui.help_drawn = 0; }
+        if (ui.reset_at) ui.help = 0;
     } else if ((ui.btn >> B_HOME) & 1u) {
         if (ui.home_long) { ui.help = 0; ui.help_drawn = 0; }
         else if (set.page != PG_MAIN) { set.page = PG_MAIN; dirty(); }

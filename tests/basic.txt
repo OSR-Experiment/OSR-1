@@ -244,3 +244,24 @@ wait 600
 expect grid 2
 expect sound 10
 expect page 0
+# HOME + REC held 3 s: the first settings back (let go before: nothing)
+turn PRESET 3
+wait 30
+press HOME
+press REC
+wait 1500
+release REC
+release HOME
+wait 100
+expect sound 13
+press HOME
+press REC
+wait 1200
+shot reset_count.png
+wait 2000
+release REC
+release HOME
+wait 100
+expect sound 0
+expect grid 0
+expect page 0

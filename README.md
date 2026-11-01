@@ -28,6 +28,7 @@ Une seule fonction par commande, sans touche shift.
 | SAVE | Recul : la bestiole dans son bocal, la musique entendue depuis l'extérieur |
 | ARP / SEQ / PLAY / REC | La lampe / une pirouette / l'image seule, sans infos / nourrir |
 | OCT- / OCT+ | Octave |
+| HOME + REC (tenir 3 s) | Retour aux réglages du premier démarrage (compte à rebours ; lâcher avant = rien) |
 
 Au premier démarrage : pas de batterie, pas d'effets, une légère reverb. Quand on monte la batterie, le pattern de départ est KICK ONLY. L'écran du firmware est en anglais. Le sidechain (ON par défaut) pompe sur les
 kicks du pattern dès que la batterie est au-dessus de 0, même si le kick lui-même est à 0.
