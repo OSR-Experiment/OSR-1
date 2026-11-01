@@ -1,0 +1,7 @@
+{
+  "what": "Explore sound with your Blop: one-finger chords from 38 grids, chord rhythms, a bass with its own riffs and a few discreet drums with sidechain, while a little creature swims to your chords in an aquarium on the screen. Chords and bass go out as MIDI over USB.",
+  "author": "Obsimo",
+  "kinds": "chords",
+  "play": "https://osr-experiment.github.io/OSR-1/emu/",
+  "image": "site/img/hub.png"
+}
