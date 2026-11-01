@@ -699,7 +699,8 @@ static struct {
     float t;                             /* seconds */
     float x, y, home_x;                  /* the creature, in big pixels (scene) */
     float dir, puff, spin, hue, hue_to;
-    uint32_t kick_at, hit_at, blink_at, eat_at, rot_at, sleep_at;
+    uint32_t kick_at, hit_at, blink_at, eat_at, rot_at, sleep_at, start_at;
+    uint8_t started;
     int last_step, last_idx;
     uint32_t last_hit_ms;
     float ex[16], ey[16];                /* recent positions, for the delay's echoes */
@@ -1412,10 +1413,14 @@ static void scene_step(uint32_t now, float dt)
     sc.dark += ((ui.dark ? 1.0f : 0.0f) - sc.dark) * fm_minf(1.0f, dt * 5.0f);
     /* the title: at the start (BLOP, BY OBSIMO a second later, then the main page), and while HOME is held */
     {
-        float tt = ui.help ? 1.0f : now < 3000u ? 1.0f : now < 3500u ? 1.0f - (float)(now - 3000u) / 500.0f : 0.0f;
-        sc.title_ms = ui.help ? (float)(now - ui.home_at - 600u) : (float)now;
+        uint32_t since;
+        float tt;
+        if (!sc.started) { sc.started = 1; sc.start_at = now; }     /* the intro counts from the first frame */
+        since = now - sc.start_at;
+        tt = ui.help ? 1.0f : since < 3000u ? 1.0f : since < 3500u ? 1.0f - (float)(since - 3000u) / 500.0f : 0.0f;
+        sc.title_ms = ui.help ? (float)(now - ui.home_at - 600u) : (float)since;
         sc.title += (tt - sc.title) * fm_minf(1.0f, dt * 8.0f);
-        if (tt >= 1.0f && now < 3000u) sc.title = 1.0f;
+        if (tt >= 1.0f && since < 3000u) sc.title = 1.0f;
     }
     sc.bands += ((ui.clean || sc.title > 0.05f ? 0.0f : 1.0f) - sc.bands) * fm_minf(1.0f, dt * 6.0f);
     /* the delay's echoes */
@@ -1501,10 +1506,27 @@ static void draw_bottom_text(void)       /* in the second canvas: y 0 = screen r
 }
 
 
+/* the first screen at boot (the platform's splash, while the FM-1 starts): the intro's first picture,
+ * BLOP in its lights over the dark water, so the start runs on without a flash */
+void app_splash(void)
+{
+    scene_init();
+    sc.title = 1.0f; sc.title_ms = 0.0f;
+    sc.R = 10.0f; sc.sq = sc.sx = 1.0f; sc.rc = 1.0f; sc.rs = 0.0f; sc.bright = 0.86f;
+    sc.eye_state = EYE_SHUT; sc.eye_r = 1.35f;
+    sc.ecol[0] = DECOR_EYE[0][0]; sc.ecol[1] = DECOR_EYE[0][1]; sc.ecol[2] = DECOR_EYE[0][2];
+    eye_places();
+    cv_begin(240, 120, 0);
+    draw_cells(0);
+    cv_blit(0, 0);
+    cv_begin(240, 120, 0);
+    draw_cells(40);
+    cv_blit(0, 120);
+}
+
 void app_ui_init(void)
 {
     int i;
-    lcd_fill(0, 0, 240, 240, RGB(8, 6, 12));
     for (i = 0; i < 5; i++) vis[i].to = vis[i].from = i == 4 ? 36.0f : 60.0f + (float)i * 4.0f;
     scene_init();
 }

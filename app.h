@@ -7,7 +7,8 @@
 #include "plat.h"
 
 #define APP_NAME "BLOP"
-#define APP_SPLASH_RGB RGB(255, 154, 92)
+#define APP_SPLASH_RGB RGB(255, 214, 110)
+#define APP_SPLASH                      /* app_splash: the intro's first picture, not the platform's white page */
 #define APP_BLOCK 256u                   /* frames per audio block: 5.8 ms at 44.1 kHz */
 
 /* the store: the app's settings and the panel calibration (the platform's), and their flash offsets */
@@ -21,6 +22,7 @@ void app_ui_init(void);
 void app_frame(void);
 void app_input_only(void);
 void app_say(const char *a, const char *b);
+void app_splash(void);
 
 #define APP_HOST_EXPECT
 int app_expect(const char *what, int *got);
