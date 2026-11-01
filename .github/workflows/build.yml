@@ -2,8 +2,8 @@
 # toolchain server. Also runs the host simulator's tests.
 # Result: Actions tab > the run > "Artifacts" > osr1-firmware.
 name: Build firmware
-# A tag vX.Y.Z (e.g. v1.0.0) also makes a GitHub release "Blop X.Y.Z" with blop-X.Y.Z.fwsc (a release build,
-# identity FM-1_94 + XXYYZZ): what the FM-1 Firmware Hub picks up.
+# A new number in the file VERSION (e.g. 1.0.0) makes the GitHub release "Blop X.Y.Z", tag vX.Y.Z, with blop-X.Y.Z.fwsc
+# (a release build, identity FM-1_94 + XXYYZZ): what the FM-1 Firmware Hub picks up. A tag vX.Y.Z pushed does too.
 on:
   push:
     branches: [main]
@@ -87,9 +87,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # a release build (the installer checks its identity), the browser version, the site, on gh-pages
-          N=${GITHUB_RUN_NUMBER}
-          V="0.$(( (N / 100) % 100 )).$(( N % 100 ))"
+          REL=0
+          V="$(tr -d ' \n' < VERSION)"                       # the site always carries the current version
           case "$GITHUB_REF" in refs/tags/v*) V="${GITHUB_REF#refs/tags/v}";; esac
+          if ! gh release view "v$V" >/dev/null 2>&1; then REL=1; fi             # a new version: release it too
           export JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" AC79_SDK="$HOME/.jieli/ac79-sdk"
           python3 fm1-base/tools/build.py . --release "$V"
           pip install -q ziglang
@@ -102,11 +103,11 @@ jobs:
           gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null 2>&1 || echo "(Pages not on yet)"
           echo "::notice title=site::Blop $V on gh-pages"
           cd ../..
-          case "$GITHUB_REF" in refs/tags/v*)
-            gh release create "v$V" "build/blop-$V.fwsc" --title "Blop $V" --verify-tag \
+          if [ "$REL" = 1 ]; then
+            gh release create "v$V" "build/blop-$V.fwsc" --title "Blop $V" --target "$GITHUB_SHA" \
               --notes "Blop by Obsimo $V: one-finger chords, chord rhythms, a bass with its own riffs, discreet drums with sidechain, and a little creature swimming to your chords. Install it from https://osr-experiment.github.io/OSR-1/install/ (Chrome or Edge, the FM-1 connected by USB)."
-            echo "::notice title=release::Blop $V released";;
-          esac
+            echo "::notice title=release::Blop $V released"
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
