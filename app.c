@@ -604,10 +604,15 @@ static void input(void)
     if (ui.bowl) lit_btn |= 1u << B_SAVE;
     if (ui.dark) lit_btn |= 1u << B_ARP;
     if (ui.clean) lit_btn |= LED_PLAY_GREEN;
-    lit_btn |= btn & ((1u << 12) - 1u);  /* a button lights fully while it is pressed */
+    /* OCT- / OCT+: lit on the side the octave went, blinking at two octaves */
+    if (set.octave) {
+        uint32_t ob = 1u << (set.octave < 0 ? B_OCTDN : B_OCTUP);
+        if (set.octave == 1 || set.octave == -1 || (now / 300u) % 2u) lit_btn |= ob;
+    }
+    lit_btn |= btn & ((1u << 14) - 1u);  /* a button lights fully while it is pressed */
     plat_lights(lit_btn, lit_keys, 0, (1u << NKEYS) - 1u, 1);
-    /* the 12 buttons always softly on (each has one LED colour: the active one fully lit, the others mid) */
-    plat_lights_mid(((1u << 12) - 1u) & ~lit_btn, 0);
+    /* the 12 buttons and OCT- / OCT+ always softly on (one LED colour each: the active one fully lit, the others mid) */
+    plat_lights_mid(((1u << 14) - 1u) & ~lit_btn, 0);
 }
 
 void app_input_only(void) { input(); }
@@ -694,7 +699,7 @@ static struct {
     float t;                             /* seconds */
     float x, y, home_x;                  /* the creature, in big pixels (scene) */
     float dir, puff, spin, hue, hue_to;
-    uint32_t kick_at, hit_at, blink_at, eat_at, rot_at;
+    uint32_t kick_at, hit_at, blink_at, eat_at, rot_at, sleep_at;
     int last_step, last_idx;
     uint32_t last_hit_ms;
     float ex[16], ey[16];                /* recent positions, for the delay's echoes */
@@ -1034,36 +1039,87 @@ static inline uint16_t px565(float r, float g, float b)
     return swap16(RGB(R, G, B));
 }
 
+#define BOWL_CY 36.0f                    /* the bowl view's centre (screen rows): the table above the bottom band */
+/* the room around the bowl, in screen big pixels; s the bowl's scale */
+static void room(float sx, float sy, float s, float *c)
+{
+    float top = BOWL_CY + (42.0f - BOWL_CY) * s + 40.0f * s, d;
+    int i;
+    if (sy > top) {                      /* the table: its top, a bright edge, the front darker */
+        float g = 0.05f * sinr(sx * 0.9f + sy * 0.15f) + 0.03f * sinr(sx * 0.21f);
+        if (sy < top + 4.0f) { c[0] = 0.5f + g; c[1] = 0.31f + g * 0.6f; c[2] = 0.16f + g * 0.3f; }
+        else if (sy < top + 5.0f) { c[0] = 0.66f; c[1] = 0.45f; c[2] = 0.26f; }
+        else { c[0] = 0.26f + g; c[1] = 0.14f + g * 0.5f; c[2] = 0.08f + g * 0.3f; }
+        if (sy < top + 4.0f) {           /* the bowl's shadow, and the plant's */
+            float k = clamp01(1.0f - fm_fabsf(sx - 40.0f) / (36.0f * s)) * clamp01(1.0f - (sy - top) / 4.0f);
+            float k2 = clamp01(1.0f - fm_fabsf(sx - 67.0f) / 6.0f) * clamp01(1.0f - (sy - top) / 3.0f);
+            k = fm_maxf(k, k2);
+            c[0] *= 1.0f - 0.55f * k; c[1] *= 1.0f - 0.55f * k; c[2] *= 1.0f - 0.55f * k;
+        }
+    } else {                             /* the wall, warm and dim, a soft lamp light */
+        float k = sy / 80.0f, lamp = 0.18f / (1.0f + ((sx - 40.0f) * (sx - 40.0f) + (sy - 6.0f) * (sy - 6.0f)) * 0.003f);
+        c[0] = 0.13f + 0.07f * k + lamp; c[1] = 0.09f + 0.04f * k + lamp * 0.8f; c[2] = 0.11f + 0.02f * k + lamp * 0.5f;
+        if (sx > 4.0f && sx < 17.0f && sy > 15.0f && sy < 35.0f) {     /* a window: night sky, its frame */
+            int frame = sx < 5.0f || sx > 16.0f || sy < 16.0f || sy > 34.0f || fm_fabsf(sx - 10.5f) < 0.6f
+                        || fm_fabsf(sy - 25.0f) < 0.6f;
+            if (frame) { c[0] = 0.32f; c[1] = 0.24f; c[2] = 0.2f; }
+            else {
+                float v = (sy - 15.0f) / 20.0f;
+                c[0] = 0.12f + 0.15f * v; c[1] = 0.2f + 0.15f * v; c[2] = 0.42f + 0.1f * v;
+                if (hash2((int)sx, (int)sy) < 0.06f) { c[0] += 0.5f; c[1] += 0.5f; c[2] += 0.45f; }   /* stars */
+            }
+        }
+        /* the plant: a terracotta pot, leaves swaying */
+        if (sy > 45.0f && sy <= top) {
+            float hw = 4.2f - (sy - 45.0f) * 0.12f;
+            if (fm_fabsf(sx - 67.0f) < hw) {
+                if (sy < 47.0f) { c[0] = 0.72f; c[1] = 0.38f; c[2] = 0.24f; }
+                else { c[0] = 0.58f - 0.02f * (sy - 47.0f); c[1] = 0.28f; c[2] = 0.17f; }
+            }
+        }
+        d = 1e3f;
+        for (i = 0; i < 6; i++) {
+            static const float TIP[6][2] = {{57.0f, 33.0f}, {61.0f, 26.0f}, {66.0f, 22.0f}, {71.0f, 25.0f},
+                                            {76.0f, 31.0f}, {78.0f, 40.0f}};
+            float sw = sinr(sc.t * 0.8f + (float)i * 1.3f) * 1.4f;
+            d = fm_minf(d, capsule(sx, sy, 67.0f, 45.5f, TIP[i][0] + sw, TIP[i][1], 1.0f, 1.7f));
+        }
+        if (d < 0.6f) {
+            float k = clamp01(0.6f - d);
+            float lc = 0.5f + 0.5f * sinr(sx * 0.7f + sy * 0.5f);
+            c[0] = c[0] * (1.0f - k) + (0.12f + 0.08f * lc) * k;
+            c[1] = c[1] * (1.0f - k) + (0.38f + 0.2f * lc) * k;
+            c[2] = c[2] * (1.0f - k) + (0.16f + 0.06f * lc) * k;
+        }
+    }
+    c[0] *= 1.0f - 0.85f * sc.dark; c[1] *= 1.0f - 0.85f * sc.dark; c[2] *= 1.0f - 0.85f * sc.dark;
+}
+
 /* one cell's colour; (sx, sy) the cell on screen */
 static void cell(int cx, int cy, float *c)
 {
     float x = (float)cx + 0.5f, y = (float)cy + 0.5f, lx, ly, d, cov, halo, glass = 0.0f, s = 1.0f;
-    int i, in_bowl = 1, air = 0;
+    int i, in_bowl = 1, air = 0, surface = 0;
     if (sc.zoom > 0.002f) {              /* the bowl: the scene, smaller, inside a round glass on a table */
         float bd;
         s = 1.0f - 0.55f * sc.zoom;
         x = 40.0f + (x - 40.0f) / s;
-        y = 42.0f + (y - 42.0f) / s;
+        y = BOWL_CY + (y - BOWL_CY) / s;
         bd = fm_sqrtf((x - 40.0f) * (x - 40.0f) + (y - 42.0f) * (y - 42.0f));
-        if (bd > 46.0f || y < -2.0f) in_bowl = 0;
+        if (bd > 46.0f || y < 6.0f) in_bowl = 0;                  /* the round glass, open at the top */
         else {
             glass = clamp01(1.0f - fm_fabsf(bd - 45.0f) * s / 0.9f) * sc.zoom;
-            if (y < 6.0f) air = 1;
+            glass = fm_maxf(glass, clamp01(1.0f - fm_fabsf(y - 6.0f) * s / 0.8f) * sc.zoom * 0.8f);   /* the rim */
+            if (y < 13.0f) air = 1;                                /* the water's surface a little below it */
+            else if (y < 14.0f) surface = 1;
         }
     }
-    if (!in_bowl) {                      /* the room: a dim wall, a wooden table */
-        float sy = (float)cy + 0.5f, top = 42.0f + 40.0f * s;
-        if (sy > top) {
-            float g = 0.06f * sinr(((float)cx + 0.5f) * 0.9f + sy * 0.15f);
-            c[0] = 0.32f + g; c[1] = 0.19f + g * 0.6f; c[2] = 0.1f + g * 0.3f;
-        } else {
-            float k = sy / 80.0f, lamp = 0.25f / (1.0f + (((float)cx - 62.0f) * ((float)cx - 62.0f) + (sy - 10.0f) * (sy - 10.0f)) * 0.004f);
-            c[0] = 0.12f + 0.08f * k + lamp; c[1] = 0.08f + 0.04f * k + lamp * 0.8f; c[2] = 0.1f + 0.02f * k + lamp * 0.5f;
-        }
-        c[0] *= 1.0f - 0.85f * sc.dark; c[1] *= 1.0f - 0.85f * sc.dark; c[2] *= 1.0f - 0.85f * sc.dark;
+    if (!in_bowl) {                      /* the room: a wall with a window, a wooden table, a plant */
+        room((float)cx + 0.5f, (float)cy + 0.5f, s, c);
     } else {
         water(x, y, c);
-        if (air) { c[0] = c[0] * 0.4f + 0.35f; c[1] = c[1] * 0.4f + 0.33f; c[2] = c[2] * 0.4f + 0.36f; }
+        if (air) { c[0] = c[0] * 0.25f + 0.2f; c[1] = c[1] * 0.25f + 0.18f; c[2] = c[2] * 0.25f + 0.2f; }
+        if (surface) { c[0] += 0.25f; c[1] += 0.3f; c[2] += 0.35f; }
         c[0] *= sc.bright; c[1] *= sc.bright; c[2] *= sc.bright;
         c[0] *= 1.0f - 0.93f * sc.dark; c[1] *= 1.0f - 0.93f * sc.dark; c[2] *= 1.0f - 0.93f * sc.dark;
         /* the creature */
@@ -1296,6 +1352,8 @@ static void scene_step(uint32_t now, float dt)
     if (sc.eat_at && now - sc.eat_at < 800u) sc.eye_state = EYE_HEART;
     else if ((!active && food < 0) || (sc.blink_at > now && sc.blink_at - now < 120u)) sc.eye_state = EYE_SHUT;
     else sc.eye_state = EYE_OPEN;
+    if (!active && food < 0) { if (!sc.sleep_at) sc.sleep_at = now; }     /* asleep since */
+    else sc.sleep_at = 0;
     sc.eye_r = 1.35f;
     sc.ecol[0] = DECOR_EYE[set.decor][0]; sc.ecol[1] = DECOR_EYE[set.decor][1]; sc.ecol[2] = DECOR_EYE[set.decor][2];
     sc.bright = 0.5f + 0.5f * (float)set.cutoff * 0.01f;
@@ -1313,6 +1371,11 @@ static void draw_top_text(void)
     if (now < ui.msg_until) {
         int32_t x = cv_text(8, 0, &FONT_XS, ui.msg[0], RGB(200, 196, 210));
         cv_text(x + 6, 0, &FONT_XS, ui.msg[1], page_col());
+    } else if (now < 7000u || (sc.sleep_at && now - sc.sleep_at > 15000u)) {
+        /* the credit: a few seconds at the start, and while it sleeps */
+        static const char *const CREDIT[3] = {"FIRMWARE BY OBSIMO", "GO STREAM MY MUSIC ;)", "ZZZ..."};
+        int k = (int)((now / 3000u) % (now < 7000u ? 2u : 3u));
+        cv_text(8, 0, &FONT_XS, CREDIT[k], k == 2 ? RGB(170, 166, 180) : RGB(255, 214, 110));
     } else {
         cv_text(8, 0, &FONT_XS, SOUND_NAME[set.sound], page_col());
         cv_text(232 - text_w(&FONT_XS, GRID_DEF[set.grid].name), 0, &FONT_XS, GRID_DEF[set.grid].name, RGB(200, 196, 210));
@@ -1378,8 +1441,8 @@ static void draw_help(void)
         help_box(4 + (i % 6) * 39, 2 + (i / 6) * 46, 37, 42, B_DEV[i], B_FN[i],
                  page ? RGB(255, 214, 110) : RGB(150, 240, 170), page ? RGB(120, 100, 40) : RGB(40, 90, 60), &FONT_T);
     }
-    cv_text(120 - text_w(&FONT_T, "TOP ROW: PAGES   BOTTOM ROW: FOR FUN") / 2, 100, &FONT_T,
-            "TOP ROW: PAGES   BOTTOM ROW: FOR FUN", RGB(150, 146, 160));
+    cv_text(120 - text_w(&FONT_T, "FIRMWARE BY OBSIMO - GO STREAM MY MUSIC ;)") / 2, 100, &FONT_T,
+            "FIRMWARE BY OBSIMO - GO STREAM MY MUSIC ;)", RGB(255, 214, 110));
     cv_blit(0, 120);
 }
 
