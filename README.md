@@ -39,6 +39,11 @@ Cutoff = eau claire ou sombre, reverb = points lumineux, delay = échos. Elle do
 
 Les réglages se sauvent tout seuls 4 secondes après le dernier changement, quand aucun accord ne joue.
 
+## MIDI vers Ableton
+
+Par le câble USB (le FM-1 n'a pas de sortie MIDI en jack). Les notes partent comme elles sonnent : les 4 notes de
+l'accord et la basse, canal 1, avec le rythme, le strum, le latch et le glide (legato). La batterie n'est pas envoyée.
+
 ## Fabriquer le firmware
 
 Le plus simple : pousser ce dépôt sur GitHub. Le workflow `.github/workflows/build.yml` télécharge l'outil de

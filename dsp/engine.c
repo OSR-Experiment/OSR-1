@@ -124,6 +124,8 @@ static struct {
     volatile int last_step;
     volatile uint32_t last_step_ms;
     volatile int last_kick;
+    /* MIDI out (USB): the chord's and the bass's notes as they sound, channel 1 */
+    uint8_t mv[4], mb, mvel;
     volatile int last_hit;
     volatile uint32_t last_hit_ms;
     float level;
@@ -251,6 +253,54 @@ static void excite(voice_t *v, float bright)
     }
 }
 
+/* ------------------------------------------------------------------ MIDI out --- */
+/* The notes go out as they sound: rhythm, strum, latch, glide (a glide = the new notes, legato). The chord's four
+ * voices and the bass, all on channel 1, by USB (the FM-1 has no MIDI out jack). 0xFF: no note on. */
+#define MIDI_NONE 0xFFu
+static void midi_on(uint8_t n, uint8_t v)
+{
+    if (plat_midi_out_room(TO_USB) < 8u) return;      /* keep room for the note-offs we owe */
+    plat_midi_send(0x09u | 0x90u << 8 | (uint32_t)n << 16 | (uint32_t)v << 24, TO_USB);
+}
+static void midi_off(uint8_t n) { plat_midi_send(0x08u | 0x80u << 8 | (uint32_t)n << 16 | 64u << 24, TO_USB); }
+static uint8_t midi_note(float m)
+{
+    int n = (int)(m + 0.5f);
+    return (uint8_t)(n < 0 ? 0 : n > 127 ? 127 : n);
+}
+static void midi_voice_on(int i)
+{
+    uint8_t n = midi_note(E.v[i].target);
+    if (E.mv[i] != MIDI_NONE) midi_off(E.mv[i]);
+    midi_on(n, E.mvel);
+    E.mv[i] = n;
+}
+static void midi_bass_on(void)
+{
+    uint8_t n;
+    if (E.bsound == BASS_OFF) return;
+    n = midi_note(E.btarget + (E.boct ? 12.0f : 0.0f));
+    if (E.mb != MIDI_NONE) midi_off(E.mb);
+    midi_on(n, E.mvel);
+    E.mb = n;
+}
+static void midi_bass_off(void) { if (E.mb != MIDI_NONE) { midi_off(E.mb); E.mb = MIDI_NONE; } }
+static void midi_chord_off(void)
+{
+    int i;
+    for (i = 0; i < 4; i++)
+        if (E.mv[i] != MIDI_NONE) { midi_off(E.mv[i]); E.mv[i] = MIDI_NONE; }
+    if (E.bmotif == MOTIF_SUIT) midi_bass_off();
+}
+/* the chord changed under held notes (a glide): the new notes, legato */
+static void midi_retarget(void)
+{
+    int i;
+    for (i = 0; i < 4; i++)
+        if (E.mv[i] != MIDI_NONE && E.mv[i] != midi_note(E.v[i].target)) midi_voice_on(i);
+    if (E.mb != MIDI_NONE && E.mb != midi_note(E.btarget + (E.boct ? 12.0f : 0.0f))) midi_bass_on();
+}
+
 static void hit(float vel, float gate_s, float atk)
 {
     const sound_t *p = &E.p;
@@ -270,11 +320,16 @@ static void hit(float vel, float gate_s, float atk)
     E.fenv = 1.0f;
     E.ienv = 1.0f;
     if (E.bmotif == MOTIF_SUIT || E.bmotif == MOTIF_TENUE) E.bfenv = 1.0f;
+    E.mvel = (uint8_t)(30.0f + 97.0f * fm_minf(1.0f, vel));
     for (i = 0; i < 4; i++) {           /* strum: the voices start one after the other, low to high */
         E.sdel[i] = E.strum * 0.032f * SR * (float)i;
         if (E.sdel[i] > 0.0f) E.sg[i] = 0.0f;
-        else if (p->engine == ENGINE_PLUCK) excite(&E.v[i], p->bright);
+        else {
+            if (p->engine == ENGINE_PLUCK) excite(&E.v[i], p->bright);
+            midi_voice_on(i);
+        }
     }
+    if (E.bmotif == MOTIF_SUIT) midi_bass_on();
     E.last_hit = vel > 0.8f ? 1 : 2;
     E.last_hit_ms = now_ms();
 }
@@ -307,6 +362,8 @@ static void bass_hit(float gate_s, int oct)
     E.bgate = gate_s;
     E.boct = (uint8_t)oct;
     E.bfenv = 1.0f;
+    if (!E.mvel) E.mvel = 100;
+    midi_bass_on();
 }
 
 static void on_step(void)
@@ -370,7 +427,7 @@ static void chord_cmd(const float *notes, float bass, float glide)
         check_run();
         return;
     }
-    if (gc >= 1.0f) { set_notes(notes, bass, gc); return; }
+    if (gc >= 1.0f) { set_notes(notes, bass, gc); midi_retarget(); return; }
     if (E.e > 0.002f) {                 /* a quick fade, then the new chord as a fresh hit */
         copy(E.pend_notes, notes, sizeof E.pend_notes);
         E.pend_bass = bass;
@@ -423,13 +480,14 @@ static void run_commands(void)
         case CMD_DRUMS: E.dr = c->u.d.d; E.dk = c->u.d.k; E.dh = c->u.d.h; E.dr_l = c->u.d.r; break;
         case CMD_BASS: {
             uint8_t was = E.bmotif;
+            if (c->u.b.sound != E.bsound || c->u.b.motif != E.bmotif) midi_bass_off();
             E.bsound = c->u.b.sound; E.bmotif = c->u.b.motif; E.blevel = c->u.b.level;
             E.bcut = 55.0f * fm_exp2f(c->u.b.cut * 6.6f);        /* 55 Hz .. 5.4 kHz */
             if (E.active && E.bmotif == MOTIF_TENUE && was != MOTIF_TENUE) bass_hit(1e9f, 0);
             check_run();
             break;
         }
-        case CMD_PANIC: E.active = 0; E.running = 0; E.e = 0.0f; E.stage = 0; break;
+        case CMD_PANIC: E.active = 0; E.running = 0; E.e = 0.0f; E.stage = 0; midi_chord_off(); midi_bass_off(); break;
         }
         __asm__ volatile("" ::: "memory");
         cq_tail = (cq_tail + 1u) % QN;
@@ -460,6 +518,8 @@ void eng_init(void)
     E.fade_len = 0.004f * SR;
     E.last_step = -1;
     E.gatem = 1.0f;
+    for (i = 0; i < 4; i++) E.mv[i] = MIDI_NONE;
+    E.mb = MIDI_NONE;
     E.dr.kit.k_base = 62.0f; E.dr.kit.k_sweep = 95.0f; E.dr.kit.k_pdec = 0.018f; E.dr.kit.k_dec = 0.052f;
     E.dr.kit.k_drive = 1.6f; E.dr.kit.h_tone = 0.5f; E.dr.kit.h_closed = 0.016f; E.dr.kit.h_open = 0.09f;
     E.dr.kit.r_f1 = 1720.0f; E.dr.kit.r_f2 = 480.0f; E.dr.kit.r_dec = 0.008f; E.dr.kit.r_noise = 0.25f;
@@ -595,6 +655,7 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                     E.gate_left -= 1.0f;
                     if (E.gate_left <= 0.0f) {
                         E.stage = 4;
+                        midi_chord_off();
                         rC = fm_expf(-1.0f / (fm_maxf(0.004f, E.rel_s / SR) * SR * 0.25f));
                     }
                 }
@@ -611,7 +672,7 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                         set_notes(E.pend_notes, E.pend_bass, 0.0f);
                         E.e = 0.0f;
                         if (E.retrig) hit(E.vel, fm_maxf(E.gate_left, SR * 0.04f), 0.0f);
-                        else E.stage = 0;
+                        else { E.stage = 0; midi_chord_off(); }
                         fade = 0.0f;
                         for (i = 0; i < 4; i++) {   /* the new notes' increments right away */
                             float m = E.v[i].m + wob;
@@ -633,7 +694,10 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                     float vo;
                     if (E.sdel[i] > 0.0f) {         /* strum: this voice waits its turn */
                         E.sdel[i] -= 1.0f;
-                        if (E.sdel[i] <= 0.0f && eng == ENGINE_PLUCK) excite(v, p->bright);
+                        if (E.sdel[i] <= 0.0f) {
+                            if (eng == ENGINE_PLUCK) excite(v, p->bright);
+                            midi_voice_on((int)i);
+                        }
                     }
                     if (eng == ENGINE_SUB) {
                         vo = osc(p->w1, v->p1, inc1[i]) + p->mix2 * osc(p->w2, v->p2, inc2[i]);
@@ -700,7 +764,10 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                         case 3: E.be *= 0.99943f; if (E.be < 1e-5f) { E.be = 0.0f; E.bstage = 0; } break;   /* ~40 ms */
                         default: break;
                         }
-                        if (E.bstage == 1 || E.bstage == 2) { E.bgate -= 1.0f; if (E.bgate <= 0.0f) E.bstage = 3; }
+                        if (E.bstage == 1 || E.bstage == 2) {
+                            E.bgate -= 1.0f;
+                            if (E.bgate <= 0.0f) { E.bstage = 3; midi_bass_off(); }
+                        }
                         amp = E.be;
                     }
                     bass = o * amp * E.blevel * 0.75f;
