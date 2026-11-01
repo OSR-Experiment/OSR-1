@@ -710,7 +710,7 @@ static struct {
     uint32_t rnd;
     float zoom, dark;                    /* bowl view 0..1, light off 0..1 */
     /* per frame, for the cells */
-    float title, rim, R, sq, sx, ripple_r, ripple_a, bright, eye_r, rot, rc, rs, bands, ecol[3];
+    float title, title_ms, rim, R, sq, sx, ripple_r, ripple_a, bright, eye_r, rot, rc, rs, bands, ecol[3];
     int eye_state;
     float eyes[2][2], tip[2];
     uint8_t has_tip;
@@ -1114,19 +1114,53 @@ static int title_dot(int cx, int cy)       /* the title's dot under a big pixel 
     col = (lx % 17) / 3;
     return (TITLE_FONT[letter][row] >> (4 - col)) & 1;
 }
+/* BY OBSIMO under it, the same lights, one big pixel a dot: the letters drop in one after the other, 1 s after */
+static const char BYLINE[] = "BY OBSIMO";
+static const uint8_t BY_FONT[6][7] = {
+    {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E},   /* B */
+    {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04},   /* Y */
+    {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},   /* O */
+    {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E},   /* S */
+    {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E},   /* I */
+    {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11},   /* M */
+};
+#define BY_X 13
+#define BY_Y 41
+static int by_glyph(char ch) { return ch == 'B' ? 0 : ch == 'Y' ? 1 : ch == 'O' ? 2 : ch == 'S' ? 3 : ch == 'I' ? 4 : 5; }
+static int by_dot(int cx, int cy)
+{
+    int lx = cx - BY_X, i = lx / 6, n = 0, k, row;
+    float p, oy, q;
+    if (lx < 0 || i >= 9 || lx % 6 >= 5 || BYLINE[i] == ' ') return 0;
+    for (k = 0; k < i; k++) if (BYLINE[k] != ' ') n++;
+    p = (sc.title_ms - 1000.0f - 70.0f * (float)n) / 320.0f;        /* each letter's drop, 70 ms apart */
+    if (p <= 0.0f) return 0;
+    if (p > 1.0f) p = 1.0f;
+    q = p - 1.0f;                                                    /* ease out, a little bounce */
+    oy = -14.0f * (1.0f - (1.0f + 2.7f * q * q * q + 1.7f * q * q));
+    row = cy - BY_Y - (int)(oy + (oy < 0.0f ? -0.5f : 0.5f));
+    if (row < 0 || row > 6) return 0;
+    return (BY_FONT[by_glyph(BYLINE[i])][row] >> (4 - lx % 6)) & 1;
+}
+
 static void title_light(int cx, int cy, float *c)
 {
     float k = sc.title, g = 0.0f;
     int dx, dy;
-    if (cx < TITLE_X - 2 || cx > TITLE_X + 68 || cy < TITLE_Y - 2 || cy > TITLE_Y + 26) {
-        c[0] *= 1.0f - 0.6f * k; c[1] *= 1.0f - 0.6f * k; c[2] *= 1.0f - 0.6f * k;
-        return;
+    if (cx >= TITLE_X - 2 && cx <= TITLE_X + 68 && cy >= TITLE_Y - 2 && cy <= TITLE_Y + 26) {   /* BLOP */
+        if (title_dot(cx, cy)) g = 1.0f;
+        else
+            for (dy = -1; dy <= 1; dy++)
+                for (dx = -1; dx <= 1; dx++)
+                    if (title_dot(cx + dx, cy + dy)) g = fm_maxf(g, 0.3f);
     }
-    if (title_dot(cx, cy)) g = 1.0f;
-    else
-        for (dy = -1; dy <= 1; dy++)
-            for (dx = -1; dx <= 1; dx++)
-                if (title_dot(cx + dx, cy + dy)) g = fm_maxf(g, 0.3f);
+    if (g < 1.0f && cy >= BY_Y - 16 && cy <= BY_Y + 8 && cx >= BY_X - 1 && cx <= BY_X + 54) {   /* BY OBSIMO */
+        if (by_dot(cx, cy)) g = 1.0f;
+        else
+            for (dy = -1; dy <= 1; dy++)
+                for (dx = -1; dx <= 1; dx++)
+                    if (by_dot(cx + dx, cy + dy)) g = fm_maxf(g, 0.3f);
+    }
     c[0] *= 1.0f - 0.6f * k; c[1] *= 1.0f - 0.6f * k; c[2] *= 1.0f - 0.6f * k;
     c[0] += k * g * 1.1f; c[1] += k * g * 0.86f; c[2] += k * g * 0.45f;
 }
@@ -1363,9 +1397,10 @@ static void scene_step(uint32_t now, float dt)
     /* bowl, light, bands, eased */
     sc.zoom += ((ui.bowl ? 1.0f : 0.0f) - sc.zoom) * fm_minf(1.0f, dt * 4.0f);
     sc.dark += ((ui.dark ? 1.0f : 0.0f) - sc.dark) * fm_minf(1.0f, dt * 5.0f);
-    /* the title: at the start (3.5 s, fading), and while HOME is held; the bands give way to it */
+    /* the title: at the start (BLOP, BY OBSIMO a second later, then the main page), and while HOME is held */
     {
-        float tt = ui.help ? 1.0f : now < 3000u ? 1.0f : now < 3600u ? 1.0f - (float)(now - 3000u) / 600.0f : 0.0f;
+        float tt = ui.help ? 1.0f : now < 3000u ? 1.0f : now < 3500u ? 1.0f - (float)(now - 3000u) / 500.0f : 0.0f;
+        sc.title_ms = ui.help ? (float)(now - ui.home_at - 600u) : (float)now;
         sc.title += (tt - sc.title) * fm_minf(1.0f, dt * 8.0f);
         if (tt >= 1.0f && now < 3000u) sc.title = 1.0f;
     }
@@ -1455,11 +1490,9 @@ static void draw_bottom_text(void)       /* in the second canvas: y 0 = screen r
 /* ---- the title's small lines: by Obsimo, go stream */
 static void draw_title_text(int half)
 {
-    uint16_t c1 = RGB(255, 226, 150), c2 = RGB(220, 214, 230);
-    if (half == 0)
-        cv_text(120 - text_w(&FONT_S, "BY OBSIMO") / 2, 101, &FONT_S, "BY OBSIMO", c1);
-    else
-        cv_text(120 - text_w(&FONT_XS, "GO STREAM MY MUSIC ;)") / 2, 196 - 120, &FONT_XS, "GO STREAM MY MUSIC ;)", c2);
+    if (half == 1 && ui.help && sc.title_ms > 1800.0f)
+        cv_text(120 - text_w(&FONT_XS, "GO STREAM MY MUSIC ;)") / 2, 196 - 120, &FONT_XS, "GO STREAM MY MUSIC ;)",
+                RGB(220, 214, 230));
 }
 
 void app_ui_init(void)
