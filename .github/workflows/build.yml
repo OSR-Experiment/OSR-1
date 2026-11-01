@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 jobs:
   build:
@@ -79,6 +80,25 @@ jobs:
           git init -q -b builds && git add . 
           git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "build ${GITHUB_SHA::7}"
           git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" builds
+
+      - name: Site (GitHub Pages) with the web installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # a release build (the installer checks its identity), the browser version, the site, on gh-pages
+          N=${GITHUB_RUN_NUMBER}
+          V="0.$(( (N / 100) % 100 )).$(( N % 100 ))"
+          export JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" AC79_SDK="$HOME/.jieli/ac79-sdk"
+          python3 fm1-base/tools/build.py . --release "$V"
+          pip install -q ziglang
+          tools/build_web.sh
+          python3 fm1-base/tools/make_site.py . "build/osr1-$V.fwsc" "$V" build/site
+          cd build/site
+          git init -q -b gh-pages && git add -A
+          git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "Site for OSR-1 $V (${GITHUB_SHA::7})"
+          git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null 2>&1 || echo "(Pages not on yet)"
+          echo "::notice title=site::OSR-1 $V on gh-pages"
 
       - uses: actions/upload-artifact@v4
         if: always()
