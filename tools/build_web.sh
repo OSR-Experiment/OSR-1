@@ -12,5 +12,8 @@ mkdir -p build/emu
 $ZIG cc -target wasm32-wasi -mexec-model=reactor -O2 -ffp-contract=off -std=gnu99 -w -DPLAT_HOST -DPLAT_WEB \
     -I$S/host -I$S/device -I$S/include -I$S/lib -I. -Ibuild/gen -Idsp \
     -Wl,--export-dynamic -Wl,-z,stack-size=1048576 -o build/emu/app.wasm $S/web/emu/emu_web.c dsp/engine.c
-cp web/emu/index.html web/emu/worklet.js build/emu/
+# the page: fm1-base's (the FM-1 drawn as it is), with the app's name
+NAME="$(sed -n 's/^name *= *"\(.*\)"/\1/p' fm1.toml | head -1)"
+sed -e "s/{{NAME}}/$NAME/g" -e "s/{{ID}}/blop/g" $S/web/emu/index.html > build/emu/index.html
+cp $S/web/emu/worklet.js build/emu/
 echo "web: build/emu/ (serve it over http: python3 -m http.server -d build/emu)"
