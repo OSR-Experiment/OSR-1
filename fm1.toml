@@ -2,7 +2,7 @@
 name = "BLOP"
 id_prefix = "FM-1_94"           # package identity: dev FM-1_9400 (check it is free before a public release)
 usb_manufacturer = "OSR Records"
-usb_product = "Blop"
+usb_product = "Blop FM-1"
 o2 = ["dsp/engine.c"]           # the sound engine, at -O2
 include = ["dsp"]
 vendored = ["fm1-base/", "prototype/"]   # fm1-base is a submodule inside the app: its own checks are its own
