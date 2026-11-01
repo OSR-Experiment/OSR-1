@@ -241,7 +241,7 @@ static void set_notes(const float *notes, float bass, float glide_chunks)
 
 static void excite(voice_t *v, float bright)
 {
-    float L = SR / mtof(v->m), lp = 0.0f, a = 0.12f + 0.88f * bright;
+    float L = SR / mtof(v->m), lp = 0.0f, a = 0.06f + 0.42f * bright;   /* a softer pick: less of a hard click */
     uint32_t n, j;
     float *buf = ks_buf[v - E.v];
     if (L > (float)(KS_N - 4u)) L = (float)(KS_N - 4u);
@@ -624,6 +624,7 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
             E.duck = fm_flush(E.duck);
             for (i = 0; i < 4; i++) { E.rv_lp[i] = fm_flush(E.rv_lp[i]); E.v[i].prev = fm_flush(E.v[i].prev); E.v[i].last = fm_flush(E.v[i].last); }
             fc = fm_minf(SR * 0.45f, E.cut * fm_exp2f(p->fenv * E.fenv * E.vel));
+            if (eng == ENGINE_PLUCK) fc = fm_minf(fc, 2400.0f);   /* plucked strings: their own ceiling, never harsh */
             E.g = fm_tanf(3.14159265f * fc / SR);
             /* chorus taps for this chunk: 12 ms and 19 ms, +-2.8 ms */
             E.ch_ph1 += 0.31f * (float)cn / SR; if (E.ch_ph1 >= 1.0f) E.ch_ph1 -= 1.0f;

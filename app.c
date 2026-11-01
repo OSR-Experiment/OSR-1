@@ -61,7 +61,7 @@ static void settings_defaults(void)
 }
 
 static float glide_s(void) { return set.glide < 1u ? 0.0f : (float)set.glide * 0.015f; }
-static float cutoff_hz(void) { return 70.0f * fm_powf(18000.0f / 70.0f, (float)set.cutoff * 0.01f); }
+static float cutoff_hz(void) { return 70.0f * fm_powf(12000.0f / 70.0f, (float)set.cutoff * 0.01f); }   /* 70 Hz .. 12 kHz */
 static float reso_q(void) { return 1.0f; }
 
 /* ------------------------------------------------------------------ chords --- */
