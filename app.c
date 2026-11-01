@@ -28,7 +28,7 @@
 #include "patterns.h"
 
 /* ------------------------------------------------------------------ settings --- */
-#define SET_MAGIC 0x4F535235u            /* "OSR5" (v5: English, kick only by default) */
+#define SET_MAGIC 0x4F535236u            /* "OSR6" (v6: bass 80 %, 2-STEP first) */
 typedef struct {
     uint32_t magic;
     uint8_t grid, key, rich, voicing;
@@ -56,7 +56,7 @@ static void settings_defaults(void)
     set.strum = 0;
     set.bpm = 118; set.swing = 0; set.dens = 50; set.side = 1;
     set.dpat = 0; set.dkick = 75;   /* the drums start as a plain kick */ set.dhat = 30; set.drim = 25;
-    set.bsound = BASS_ROND; set.blevel = 60; set.bmotif = MOTIF_SUIT; set.bcut = 45;
+    set.bsound = BASS_ROND; set.blevel = 80; set.bmotif = MOTIF_SUIT; set.bcut = 45;
     set.creature = 0; set.eyes = 0; set.decor = 0; set.acc = 0;
 }
 

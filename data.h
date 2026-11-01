@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records) */
 /* OSR-1 data: generated from the browser prototype (gen_data.mjs), then the names translated to English
- * by hand (keep them if you regenerate). */
+ * and 2-STEP moved first in the rhythms, by hand (keep this if you regenerate). */
 #pragma once
 static const char *const FAMILY_NAME[4] = {"PADS", "KEYS", "PLUCKS", "EXPERIMENTAL"};
 #define NFAMILY 4
@@ -75,10 +75,11 @@ static const sound_t SOUNDS[32] = {
     {ENGINE_SUB, 1, 3, 5.0f, -12.0f, 0.6f, 1.0f, 1.0f, 0.4f, 0.2f, 0.0f, 0.6f, 0.996f, 0.2f, 0.3f, 1.0f, 1.4f, 0.2f, 0.3f, 0.9f, 18.0f, 0.18f, 0.0f, 0.45f, 0.53f},   /* Orgue noyé */
 };
 #define NRHYTHM 16
-static const char *const RHYTHM_NAME[NRHYTHM] = {"HELD", "QUARTERS", "EIGHTHS", "SIXTEENTHS", "OFFBEAT", "PUMP", "TRESILLO", "TRANCE GATE", "2-STEP", "GARAGE STAB", "SYNCOPATED", "SHUFFLE", "BOSSA", "STUTTER", "HALF-TIME", "FLOATING"};
+static const char *const RHYTHM_NAME[NRHYTHM] = {"HELD", "2-STEP", "QUARTERS", "EIGHTHS", "SIXTEENTHS", "OFFBEAT", "PUMP", "TRESILLO", "TRANCE GATE", "GARAGE STAB", "SYNCOPATED", "SHUFFLE", "BOSSA", "STUTTER", "HALF-TIME", "FLOATING"};
 /* 16 steps: X accent, x soft, - tie, . rest ("" = held) */
 static const struct { const char *s; float gate, swing, atk; } RHYTHM_DEF[NRHYTHM] = {
     {"", 0.0f, 0.0f, 0.0f},
+    {"X..x...x..X..x..", 0.45f, 0.12f, 0.0f},
     {"X---x---X---x---", 0.85f, 0.0f, 0.0f},
     {"X-x-X-x-X-x-X-x-", 0.6f, 0.0f, 0.0f},
     {"XxxxXxxxXxxxXxxx", 0.3f, 0.0f, 0.0f},
@@ -86,7 +87,6 @@ static const struct { const char *s; float gate, swing, atk; } RHYTHM_DEF[NRHYTH
     {"X---X---X---X---", 0.95f, 0.0f, 0.09f},
     {"X--x--x-X--x--x-", 0.7f, 0.0f, 0.0f},
     {"X.XX.XX.X.XX.XX.", 0.55f, 0.0f, 0.0f},
-    {"X..x...x..X..x..", 0.45f, 0.12f, 0.0f},
     {"..X..x....X..x.x", 0.35f, 0.15f, 0.0f},
     {"X..x..x...x..x..", 0.4f, 0.0f, 0.0f},
     {"X.xxX.xxX.xxX.x.", 0.45f, 0.2f, 0.0f},

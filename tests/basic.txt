@@ -23,9 +23,9 @@ expect active 0
 turn SELECT 2
 wait 30
 expect grid 2
-turn ALGO 7
+turn ALGO 8
 wait 30
-expect rhythm 7
+expect rhythm 8
 turn K4 1
 wait 150
 turn K4 1
@@ -212,7 +212,7 @@ wait 20
 key 14 up
 wait 30
 expect active 0
-turn ALGO -7
+turn ALGO -8
 wait 300
 shot sleep.png
 # sounds: a pluck with strum, an FM key
