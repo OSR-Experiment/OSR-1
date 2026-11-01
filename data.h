@@ -1,43 +1,44 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records) */
-/* OSR-1 data: generated from the browser prototype (gen_data.mjs). Do not edit by hand. */
+/* OSR-1 data: generated from the browser prototype (gen_data.mjs), then the names translated to English
+ * by hand (keep them if you regenerate). */
 #pragma once
-static const char *const FAMILY_NAME[4] = {"NAPPES", "CLAVIERS", "PLUCKS", "EXPERIMENTAL"};
+static const char *const FAMILY_NAME[4] = {"PADS", "KEYS", "PLUCKS", "EXPERIMENTAL"};
 #define NFAMILY 4
 #define PER_FAMILY 8
 static const char *const SOUND_NAME[32] = {
-    "SIROP",
-    "VITRAIL",
-    "RAVE LOINTAIN",
-    "VERRE",
-    "AUBE",
-    "DERIVE",
-    "BRUME",
+    "SYRUP",
+    "STAINED GLASS",
+    "DISTANT RAVE",
+    "GLASS",
+    "DAWN",
+    "DRIFT",
+    "MIST",
     "HARMONIUM",
-    "VELOURS",
-    "ORGUE FANE",
+    "VELVET",
+    "FADED ORGAN",
     "TINES",
     "WURLI",
-    "PIANO JOUET",
+    "TOY PIANO",
     "CASSETTE",
-    "CLAVECIN LUNAIRE",
+    "MOON HARPSICHORD",
     "MELLOW",
-    "CLOCHE",
+    "BELL",
     "KALIMBA",
-    "GUITARE SECHE",
-    "HARPE",
+    "ACOUSTIC GUITAR",
+    "HARP",
     "KOTO",
     "MARIMBA",
-    "STAB HOUSE",
-    "GOUTTES",
-    "SITAR FANTOME",
-    "BANDE USEE",
-    "SOUS L'EAU",
-    "METAL DOUX",
-    "CRISTAUX",
-    "FLÛTE DE VERRE",
-    "HARPE TORDUE",
-    "ORGUE NOYE"
+    "HOUSE STAB",
+    "DROPLETS",
+    "GHOST SITAR",
+    "WORN TAPE",
+    "UNDERWATER",
+    "SOFT METAL",
+    "CRYSTALS",
+    "GLASS FLUTE",
+    "BENT HARP",
+    "DROWNED ORGAN"
 };
 static const sound_t SOUNDS[32] = {
     {ENGINE_SUB, 0, 0, 14.0f, 0.0f, 0.8f, 1.0f, 1.0f, 0.4f, 0.2f, 0.0f, 0.6f, 0.996f, 0.12f, 0.3f, 1.0f, 1.2f, 0.6f, 0.6f, 0.8f, 14.0f, 0.25f, 0.0f, 0.45f, 0.78f},   /* Sirop */
@@ -74,7 +75,7 @@ static const sound_t SOUNDS[32] = {
     {ENGINE_SUB, 1, 3, 5.0f, -12.0f, 0.6f, 1.0f, 1.0f, 0.4f, 0.2f, 0.0f, 0.6f, 0.996f, 0.2f, 0.3f, 1.0f, 1.4f, 0.2f, 0.3f, 0.9f, 18.0f, 0.18f, 0.0f, 0.45f, 0.53f},   /* Orgue noyé */
 };
 #define NRHYTHM 16
-static const char *const RHYTHM_NAME[NRHYTHM] = {"TENU", "NOIRES", "CROCHES", "DOUBLES", "CONTRETEMPS", "POMPE", "TRESILLO", "TRANCE GATE", "2-STEP", "GARAGE STAB", "SYNCOPE", "SHUFFLE", "BOSSA", "STUTTER", "DEMI-TEMPS", "FLOTTANT"};
+static const char *const RHYTHM_NAME[NRHYTHM] = {"HELD", "QUARTERS", "EIGHTHS", "SIXTEENTHS", "OFFBEAT", "PUMP", "TRESILLO", "TRANCE GATE", "2-STEP", "GARAGE STAB", "SYNCOPATED", "SHUFFLE", "BOSSA", "STUTTER", "HALF-TIME", "FLOATING"};
 /* 16 steps: X accent, x soft, - tie, . rest ("" = held) */
 static const struct { const char *s; float gate, swing, atk; } RHYTHM_DEF[NRHYTHM] = {
     {"", 0.0f, 0.0f, 0.0f},
@@ -97,42 +98,42 @@ static const struct { const char *s; float gate, swing, atk; } RHYTHM_DEF[NRHYTH
 #define NGRID 38
 /* chords: semitones above the tonic + quality (M maj, V dominant-major, m, D dom7, d dim, s sus4, S sus2, a aug); 8 white keys then 5 black */
 static const struct { const char *name; uint8_t rich; const char *white, *black; } GRID_DEF[NGRID] = {
-    {"POP LUMINEUX", 0, "0M 2m 4m 5M 7V 9m 7s 5S", "10M 5m 8M 4D 2D"},
-    {"BALLADE", 1, "0M 9m 5M 7V 4m 2m 7s 0S", "10M 8M 4D 5m 3M"},
-    {"INDIE PSYCHE", 1, "0M 7m 5M 5m 9m 4m 2m 10M", "8M 3M 2V 6d 1M"},
-    {"MINEUR EUPHORIQUE", 1, "0m 8M 3M 10V 5m 7m 10s 0S", "7V 2d 1M 5M 8m"},
-    {"PSYCHE REVEUR", 1, "0M 4m 5M 5m 9m 2D 7V 10M", "8M 3M 1M 6d 11m"},
-    {"DORIEN CHAUD", 1, "0m 5V 3M 10M 2m 7m 9d 0s", "8M 7M 1M 5D 11M"},
-    {"MIXOLYDIEN", 0, "0V 10M 5M 7m 2m 9m 4d 0s", "3M 8M 5m 7M 2D"},
-    {"ANDALOUSE", 0, "0m 10V 8M 7V 5m 3M 2d 7s", "1M 7D 0M 6d 11d"},
-    {"MELANCOLIE", 1, "0m 8M 3M 10V 5m 7m 10s 0s", "7V 1M 5V 8m 4M"},
+    {"BRIGHT POP", 0, "0M 2m 4m 5M 7V 9m 7s 5S", "10M 5m 8M 4D 2D"},
+    {"BALLAD", 1, "0M 9m 5M 7V 4m 2m 7s 0S", "10M 8M 4D 5m 3M"},
+    {"PSYCH INDIE", 1, "0M 7m 5M 5m 9m 4m 2m 10M", "8M 3M 2V 6d 1M"},
+    {"EUPHORIC MINOR", 1, "0m 8M 3M 10V 5m 7m 10s 0S", "7V 2d 1M 5M 8m"},
+    {"DREAMY PSYCH", 1, "0M 4m 5M 5m 9m 2D 7V 10M", "8M 3M 1M 6d 11m"},
+    {"WARM DORIAN", 1, "0m 5V 3M 10M 2m 7m 9d 0s", "8M 7M 1M 5D 11M"},
+    {"MIXOLYDIAN", 0, "0V 10M 5M 7m 2m 9m 4d 0s", "3M 8M 5m 7M 2D"},
+    {"ANDALUSIAN", 0, "0m 10V 8M 7V 5m 3M 2d 7s", "1M 7D 0M 6d 11d"},
+    {"MELANCHOLY", 1, "0m 8M 3M 10V 5m 7m 10s 0s", "7V 1M 5V 8m 4M"},
     {"HOUSE PIANO", 1, "9m 5M 0M 7V 2m 4m 7s 0S", "10M 4D 8M 3M 5m"},
     {"DEEP HOUSE", 2, "0m 3M 10m 5m 8M 7m 2m 10V", "1M 6M 11M 4M 9M"},
-    {"LYDIEN FLOTTANT", 1, "0M 2M 7M 4m 11m 9m 6d 0S", "5M 10M 8M 3M 1M"},
-    {"SOMBRE", 1, "0m 1M 3M 5m 7d 8M 10m 0s", "6M 11M 4M 9M 2M"},
-    {"SPLEEN ANGLAIS", 1, "0m 8M 3M 4M 9m 5M 10M 7s", "1M 6m 11M 2M 7V"},
+    {"FLOATING LYDIAN", 1, "0M 2M 7M 4m 11m 9m 6d 0S", "5M 10M 8M 3M 1M"},
+    {"DARK", 1, "0m 1M 3M 5m 7d 8M 10m 0s", "6M 11M 4M 9M 2M"},
+    {"ENGLISH SPLEEN", 1, "0m 8M 3M 4M 9m 5M 10M 7s", "1M 6m 11M 2M 7V"},
     {"DISCO", 1, "2m 7D 0M 9m 5M 4D 0S 7s", "10M 3M 8M 1D 6d"},
-    {"CIEL ETRANGE", 1, "0M 4M 9m 5m 0S 7s 2m 8M", "3M 10M 6M 1M 11m"},
-    {"HYMNE", 0, "0M 7V 9m 4m 5M 2m 7s 2V", "10M 8M 5m 3M 4M"},
-    {"NUIT", 2, "0m 3M 5m 7m 8M 10V 7s 0S", "11M 1M 6M 9M 4M"},
-    {"REVERIE INDIE", 1, "0M 4V 9m 2V 5M 5m 7s 10M", "3M 8M 6d 11m 1M"},
-    {"CHROMATIQUE", 1, "0M 4M 8M 3M 9M 5M 1M 7M", "10M 6M 11M 2M 0m"},
-    {"MAJEUR-MINEUR", 1, "0M 0m 5M 5m 7V 3M 8M 10M", "1M 9m 2m 4m 6d"},
-    {"SOLEIL", 0, "0M 5M 9m 7V 2m 0S 5S 7s", "10M 3M 8M 4D 6d"},
+    {"STRANGE SKY", 1, "0M 4M 9m 5m 0S 7s 2m 8M", "3M 10M 6M 1M 11m"},
+    {"ANTHEM", 0, "0M 7V 9m 4m 5M 2m 7s 2V", "10M 8M 5m 3M 4M"},
+    {"NIGHT", 2, "0m 3M 5m 7m 8M 10V 7s 0S", "11M 1M 6M 9M 4M"},
+    {"INDIE REVERIE", 1, "0M 4V 9m 2V 5M 5m 7s 10M", "3M 8M 6d 11m 1M"},
+    {"CHROMATIC", 1, "0M 4M 8M 3M 9M 5M 1M 7M", "10M 6M 11M 2M 0m"},
+    {"MAJOR-MINOR", 1, "0M 0m 5M 5m 7V 3M 8M 10M", "1M 9m 2m 4m 6d"},
+    {"SUNSHINE", 0, "0M 5M 9m 7V 2m 0S 5S 7s", "10M 3M 8M 4D 6d"},
     {"BOSSA", 2, "2m 7D 0M 9D 5M 4m 9m 7s", "3d 8D 10D 11d 0m"},
-    {"TRAP MELODIQUE", 0, "0m 8M 10V 3M 5m 7m 2d 0S", "1M 7M 11d 6M 9d"},
-    {"EUPHORIE TRANCE", 0, "0m 8M 3M 10V 5m 0s 8S 10s", "7V 2d 1M 6M 11M"},
+    {"MELODIC TRAP", 0, "0m 8M 10V 3M 5m 7m 2d 0S", "1M 7M 11d 6M 9d"},
+    {"TRANCE EUPHORIA", 0, "0m 8M 3M 10V 5m 0s 8S 10s", "7V 2d 1M 6M 11M"},
     {"FUNK", 1, "0D 5D 7D 10D 3D 2m 0s 9m", "1D 6D 8D 11D 4D"},
     {"BLUES", 1, "0D 5D 7D 9m 2m 4m 10M 0s", "3M 8M 6d 1D 11d"},
     {"CINEMA", 1, "0m 8M 5m 3M 10V 7V 1M 0s", "4M 6m 9M 11d 2d"},
     {"AMBIENT", 3, "0M 2m 4m 5M 7s 9m 0S 5S", "10M 3M 8M 6m 1M"},
     {"SHOEGAZE", 1, "0M 5M 9m 4V 2V 7V 10M 0S", "3M 8M 1M 6M 11m"},
-    {"REVE 80S", 1, "0m 10V 8M 10s 5m 3M 7m 0S", "1M 6M 11M 2d 4M"},
-    {"ROMANTIQUE", 1, "0M 4m 9m 2m 5M 7V 9D 4D", "8M 10M 3M 6d 1M"},
-    {"PLANANT MINEUR", 2, "0m 3M 7m 10V 5m 2m 8M 0S", "1M 6M 4M 11M 9M"},
-    {"RETRO JEU VIDEO", 0, "0M 7V 9m 5M 2m 4m 10M 8M", "3M 1M 6d 11m 0m"},
+    {"80S DREAM", 1, "0m 10V 8M 10s 5m 3M 7m 0S", "1M 6M 11M 2d 4M"},
+    {"ROMANTIC", 1, "0M 4m 9m 2m 5M 7V 9D 4D", "8M 10M 3M 6d 1M"},
+    {"FLOATING MINOR", 2, "0m 3M 7m 10V 5m 2m 8M 0S", "1M 6M 4M 11M 9M"},
+    {"RETRO GAME", 0, "0M 7V 9m 5M 2m 4m 10M 8M", "3M 1M 6d 11m 0m"},
     {"TENSION", 1, "0m 1M 6d 11d 3M 8M 7D 0s", "4M 9M 2d 5m 10m"},
-    {"COUCHER DE SOLEIL", 2, "0M 5M 7m 10M 2m 9m 4m 0S", "3M 8M 1M 6d 11M"},
+    {"SUNSET", 2, "0M 5M 7m 10M 2m 9m 4m 0S", "3M 8M 1M 6d 11M"},
     {"UK GARAGE", 2, "2m 0M 4m 9m 5M 7D 7s 0S", "1M 3M 6d 8M 10D"},
-    {"RAVE 90S", 0, "0m 3M 10V 8M 5m 7V 0s 10s", "1M 6M 11M 2M 4M"},
+    {"90S RAVE", 0, "0m 3M 10V 8M 5m 7V 0s 10s", "1M 6M 11M 2M 4M"},
 };

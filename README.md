@@ -24,11 +24,12 @@ Une seule fonction par commande, sans touche shift.
 | EDIT | Page DÉCOR : bestiole (8), forme des yeux (6), fond (8), accessoire (6) |
 | GLO | Page BATTERIE : pattern (10, chacun avec son kit), kick, hi-hat, rim |
 | (rappuyer sur une page) | Retour à la page principale |
-| HOME | Recul : la bestiole dans son bocal, la musique entendue depuis l'extérieur. Tenu : l'aide |
-| SAVE / ARP / SEQ / PLAY / REC | Toquer sur la vitre / la lampe / une pirouette / mode fête / nourrir |
+| HOME | Retour à la page principale. Tenu : l'aide |
+| SAVE | Recul : la bestiole dans son bocal, la musique entendue depuis l'extérieur |
+| ARP / SEQ / PLAY / REC | La lampe / une pirouette / l'image seule, sans infos / nourrir |
 | OCT- / OCT+ | Octave |
 
-Au premier démarrage : pas de batterie, pas d'effets, une légère reverb. Le sidechain (ON par défaut) pompe sur les
+Au premier démarrage : pas de batterie, pas d'effets, une légère reverb. Quand on monte la batterie, le pattern de départ est KICK ONLY. L'écran du firmware est en anglais. Le sidechain (ON par défaut) pompe sur les
 kicks du pattern dès que la batterie est au-dessus de 0, même si le kick lui-même est à 0.
 
 L'écran : une bestiole noire aux yeux lumineux, vue comme une photo d'écran en gros plan (grille de pixels, moiré).

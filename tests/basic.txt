@@ -19,7 +19,7 @@ shot chord.png
 key 7 up
 wait 30
 expect active 0
-# a grid, a rhythm: the chord keeps playing (latch); the drums from the main page's K4
+# a grid, a rhythm: the chord keeps playing (latch); the drums from the main page's K4 (kick only at first)
 turn SELECT 2
 wait 30
 expect grid 2
@@ -163,12 +163,17 @@ turn K2 -5
 turn K3 -7
 turn K4 -5
 wait 30
-# the bottom row: bowl, food, light, party, pirouette, knock
+# HOME: back to the main page (we are on the decor page)
+expect page 5
 tap HOME
+wait 30
+expect page 0
+# the bottom row: bowl, food, light, clean screen, pirouette
+tap SAVE
 wait 900
 expect bowl 1
 shot bowl.png
-tap HOME
+tap SAVE
 wait 600
 expect bowl 0
 tap REC
@@ -184,16 +189,14 @@ tap ARP
 wait 30
 tap PLAY
 wait 600
-expect party 1
-shot party.png
+expect clean 1
+shot clean.png
 tap PLAY
 wait 30
+expect clean 0
 tap SEQ
 wait 300
 shot pirouette.png
-tap SAVE
-wait 150
-shot knock.png
 # HOME held: the help screen
 press HOME
 wait 900

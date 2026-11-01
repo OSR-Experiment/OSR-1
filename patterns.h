@@ -5,8 +5,8 @@
 
 /* 16 steps: X accent, x soft, o open hi-hat (hat row only), . rest. Drums stay discreet: minimal patterns. */
 #define NDRUM 10
-static const char *const DRUM_NAME[NDRUM] = {"KICK SEUL", "HOUSE", "TECHNO", "MINIMAL", "2-STEP", "BREAK",
-                                             "DEMI-TEMPS", "ELECTRO", "DUB", "BOSSA"};
+static const char *const DRUM_NAME[NDRUM] = {"KICK ONLY", "HOUSE", "TECHNO", "MINIMAL", "2-STEP", "BREAK",
+                                             "HALF-TIME", "ELECTRO", "DUB", "BOSSA"};
 static const struct { const char *k, *h, *r; } DRUM_DEF[NDRUM] = {
     {"X...X...X...X...", "................", "................"},   /* kick seul */
     {"X...X...X...X...", "..x...x...x...x.", "....x.......x..."},   /* house */
@@ -35,22 +35,22 @@ static const kit_t DRUM_KIT[NDRUM] = {
     {70.0f, 40.0f, 0.020f, 0.050f, 1.0f, 0.30f, 0.010f, 0.04f, 2500.0f, 1250.0f, 0.030f, 0.05f},   /* bossa: soft, clave */
 };
 
-static const char *const BASS_NAME[NBASS_SOUND] = {"OFF", "SUB", "ROND", "ACID", "REESE", "PLUCK", "FM"};
-static const char *const MOTIF_NAME[NMOTIF] = {"SUIT", "TENUE", "CONTRE", "OCTAVES", "BLANCHES", "GALOP",
-                                               "SYNCOPE", "ROULANTE"};
+static const char *const BASS_NAME[NBASS_SOUND] = {"OFF", "SUB", "ROUND", "ACID", "REESE", "PLUCK", "FM"};
+static const char *const MOTIF_NAME[NMOTIF] = {"FOLLOW", "HOLD", "OFFBEAT", "OCTAVES", "HALVES", "GALLOP",
+                                               "SYNCOPE", "ROLLING"};
 
 #define NCREATURE 8
-static const char *const CREATURE_NAME[NCREATURE] = {"GLOBE", "LUNE", "MEDUSE", "ETOILE", "POULPE", "HIPPOCAMPE",
-                                                     "RAIE", "CRABE"};
+static const char *const CREATURE_NAME[NCREATURE] = {"PUFFER", "SUNFISH", "JELLY", "STARFISH", "OCTOPUS", "SEAHORSE",
+                                                     "MANTA", "CRAB"};
 #define NEYE 6
-static const char *const EYE_NAME[NEYE] = {"ROND", "COEUR", "ETOILE", "LASER", "SPIRALE", "CROIX"};
+static const char *const EYE_NAME[NEYE] = {"ROUND", "HEART", "STAR", "LASER", "SPIRAL", "CROSS"};
 #define NDECOR 8
-static const char *const DECOR_NAME[NDECOR] = {"BLEU", "MOIRE", "BRAISE", "ACIDE", "ABYSSES", "CORAIL", "AURORE",
-                                               "ECRAN VERT"};
+static const char *const DECOR_NAME[NDECOR] = {"BLUE", "MOIRE", "EMBERS", "ACID", "ABYSS", "CORAL", "AURORA",
+                                               "GREEN CRT"};
 /* the eyes' light, per background */
 static const float DECOR_EYE[NDECOR][3] = {{0.85f, 0.95f, 1.0f}, {1.0f, 0.35f, 0.75f}, {1.0f, 0.8f, 0.3f},
                                            {0.4f, 1.0f, 0.95f}, {0.45f, 0.9f, 1.0f}, {1.0f, 0.95f, 0.7f},
                                            {0.7f, 1.0f, 0.6f}, {0.5f, 1.0f, 0.45f}};
 #define NACC 6
-static const char *const ACC_NAME[NACC] = {"AUCUN", "CHAPEAU", "COURONNE", "CASQUE", "NOEUD", "ANTENNE"};
+static const char *const ACC_NAME[NACC] = {"NONE", "PARTY HAT", "CROWN", "HEADPHONES", "BOW", "ANTENNA"};
 static const char *const ONOFF_NAME[2] = {"OFF", "ON"};
