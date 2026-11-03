@@ -53,6 +53,8 @@ void eng_sound(const sound_t *p);
 void eng_rhythm(const rhythm_t *r);
 void eng_chord(const float notes[4], float bass, float glide_s);
 void eng_stop(void);
+/* an outside MIDI clock's beat: the even step STEP (0..15) began at AT_MS (plat_ms); STEP -1: the clock is gone */
+void eng_sync(int step, uint32_t at_ms);
 /* side: sidechain amount 0..1; drums_on: the drum kit plays while chords play (its kicks pump the sidechain) */
 void eng_params(float bpm, float cut_hz, float q, float side, int drums_on);
 /* all 0..1 */

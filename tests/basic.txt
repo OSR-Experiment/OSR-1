@@ -265,3 +265,10 @@ wait 100
 expect sound 0
 expect grid 0
 expect page 0
+# MIDI clock in by USB: its tempo leads (and its beats place the steps); gone, BPM leads again
+midi FA
+clock 120 20
+expect syncbpm 125
+clock 200 20
+wait 600
+expect syncbpm 0

@@ -252,9 +252,83 @@ static void send_rhythm(void)
         }
     eng_rhythm(&r);
 }
+/* ------------------------------------------------------------------ MIDI clock in (USB) --- */
+/* Ableton (or any host) sending MIDI clock to Blop: its tempo replaces BPM, and its beats place the rhythm's steps.
+ * The 1 kHz tick reads the MIDI in (each clock's time to the ms); the main loop takes the tempo and the beats from it.
+ * Start (FA) puts the next clock on beat 1, Continue (FB) and Song Position (F2) where the host is, Stop (FC) lets
+ * Blop run on alone at the last tempo, as when the clock goes quiet. */
+#define CK_N 49u                                  /* 48 clocks: two beats, for the tempo */
+static volatile struct {
+    uint32_t t[CK_N], n;                          /* the clocks' times (ms), how many so far */
+    int32_t pos;                                  /* clocks since beat 1 (24 a beat), counted while the host plays */
+    uint8_t run;                                  /* the host's transport plays (Start / Continue .. Stop) */
+    uint32_t beat_ms, beat_seq;                   /* the last beat's time, and a count of beats */
+    int32_t beat_pos;
+    uint32_t last_ms;
+} ck;
+static float ck_bpm;                              /* the tempo it gives (0: no clock, BPM leads) */
+static uint32_t ck_seen_seq;
+static uint8_t ck_placed;                         /* the engine's steps follow the beats */
+
+void app_tick(void)
+{
+    uint32_t pkt, now;
+    int port;
+    while (plat_midi_in(&pkt, &port)) {
+        uint32_t st = pkt >> 8 & 0xFFu;
+        if (port != PORT_USB) continue;
+        now = plat_ms();
+        switch (st) {
+        case 0xF8:
+            ck.t[ck.n % CK_N] = now; ck.n++; ck.last_ms = now;
+            if (ck.run) {
+                ck.pos++;
+                if (ck.pos % 24 == 0) { ck.beat_ms = now; ck.beat_pos = ck.pos; ck.beat_seq++; }
+            }
+            break;
+        case 0xFA: ck.run = 1; ck.pos = -1; break;
+        case 0xFB: ck.run = 1; break;
+        case 0xFC: ck.run = 0; break;
+        case 0xF2: ck.pos = (int32_t)((pkt >> 16 & 0x7Fu) | (pkt >> 24 & 0x7Fu) << 7) * 6 - 1; break;
+        default: break;
+        }
+    }
+}
+
 static void send_params(void)
 {
-    eng_params((float)set.bpm, cutoff_hz(), reso_q(), set.side ? 0.75f : 0.0f, set.drums > 0);
+    eng_params(ck_bpm > 0.0f ? ck_bpm : (float)set.bpm, cutoff_hz(), reso_q(), set.side ? 0.75f : 0.0f, set.drums > 0);
+}
+
+static void clock_follow(uint32_t now)
+{
+    uint32_t f, n, t0, t1, seq, bms;
+    int32_t bpos;
+    uint8_t run;
+    float bpm = 0.0f;
+    f = plat_lock();
+    n = ck.n; t1 = ck.t[(n + CK_N - 1u) % CK_N]; t0 = ck.t[n % CK_N];
+    seq = ck.beat_seq; bms = ck.beat_ms; bpos = ck.beat_pos; run = ck.run;
+    plat_unlock(f);
+    if (n >= CK_N && now - t1 < 300u && t1 - t0 > 0u) bpm = 120000.0f / (float)(t1 - t0);   /* 48 clocks = 2 beats */
+    if (bpm > 0.0f && (bpm < 30.0f || bpm > 300.0f)) bpm = 0.0f;
+    if (bpm > 0.0f) {
+        float b = ck_bpm > 0.0f ? ck_bpm + 0.25f * (bpm - ck_bpm) : bpm;
+        b = (float)(int32_t)(b * 10.0f + 0.5f) * 0.1f;               /* to a tenth */
+        if (ck_bpm <= 0.0f) app_say("MIDI SYNC", "TEMPO FROM USB");
+        if (b != ck_bpm) { ck_bpm = b; send_params(); }
+        if (seq != ck_seen_seq) {
+            ck_seen_seq = seq;
+            if (run) { eng_sync((int)((bpos / 6) & 15), bms); ck_placed = 1; }
+        }
+        if (!run && ck_placed) { eng_sync(-1, 0); ck_placed = 0; }   /* the host stopped: free again, its tempo kept */
+    } else if (ck_bpm > 0.0f) {
+        ck_bpm = 0.0f;
+        eng_sync(-1, 0);
+        ck_placed = 0;
+        send_params();
+        app_say("MIDI SYNC", "OFF");
+    }
 }
 static void send_fx(void)
 {
@@ -465,7 +539,7 @@ static float knob_text(const kdef_t *d, char *b)
     float f = (float)(v - d->lo) / (float)(d->hi - d->lo);
     switch (d->kind) {
     case KD_LIST: b[0] = 0; text_cat(b, d->names[v]); break;
-    case KD_BPM: int_text(v, b); break;
+    case KD_BPM: if (ck_bpm > 0.0f) { int_text((int32_t)(ck_bpm + 0.5f), b); text_cat(b, " SYNC"); } else int_text(v, b); break;
     case KD_GLIDE:
         if (v < 1) { b[0] = 0; text_cat(b, "OFF"); }
         else { int_text(v * 15, b); text_cat(b, " MS"); }
@@ -573,6 +647,7 @@ static void input(void)
 {
     uint32_t keys = plat_keys(), btn = plat_buttons(), k, lit_keys = 0, lit_btn = 0, now = plat_ms();
     int32_t e;
+    clock_follow(now);
     for (k = 0; k < NKEYS; k++) {
         uint32_t bit = 1u << k;
         if ((keys & bit) && !(ui.keys & bit)) {
@@ -1600,6 +1675,7 @@ int app_expect(const char *what, int *got)
     else if (!strcmp(what, "octave")) *got = set.octave;
     else if (!strcmp(what, "dirty")) *got = set_dirty;
     else if (!strcmp(what, "bpm")) *got = set.bpm;
+    else if (!strcmp(what, "syncbpm")) *got = (int)(ck_bpm + 0.5f);
     else if (!strcmp(what, "side")) *got = set.side;
     else if (!strcmp(what, "page")) *got = set.page;
     else if (!strcmp(what, "drums")) *got = set.drums;

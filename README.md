@@ -43,7 +43,16 @@ Les réglages se sauvent tout seuls 4 secondes après le dernier changement, qua
 ## MIDI vers Ableton
 
 Par le câble USB (le FM-1 n'a pas de sortie MIDI en jack). Les notes partent comme elles sonnent : les 4 notes de
-l'accord et la basse, canal 1, avec le rythme, le strum, le latch et le glide (legato). La batterie n'est pas envoyée.
+l'accord et la basse, canal 1, avec le rythme, le strum, le latch et le glide (legato : les nouvelles notes partent
+avant que les anciennes s'arrêtent, donc un synthé réglé en glide « legato » glisse de l'une à l'autre). La batterie
+n'est pas envoyée.
+
+## Synchro MIDI depuis Ableton
+
+Blop suit l'horloge MIDI (MIDI clock) qui arrive par USB : le tempo d'Ableton remplace le BPM (la page GROOVE affiche
+« 124 SYNC »), et les rythmes, la basse et la batterie se calent sur ses temps. Quand Ableton s'arrête ou n'envoie plus
+d'horloge, Blop continue seul au dernier tempo. Dans Ableton : Préférences → Link/Tempo/MIDI, ligne de sortie de
+« Blop FM-1 », cocher **Sync**.
 
 ## Fabriquer le firmware
 

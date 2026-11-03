@@ -37,7 +37,7 @@ static float *const ap_buf[4] = {ap_buf0, ap_buf1, ap_buf2, ap_buf3};
 
 /* ------------------------------------------------------------------ command queue (main loop -> render) --- */
 enum { CMD_SOUND, CMD_RHYTHM, CMD_CHORD, CMD_STOP, CMD_PARAMS, CMD_FX, CMD_GROOVE, CMD_DRUMS, CMD_BASS, CMD_MUFFLE,
-       CMD_BLIP, CMD_PANIC };
+       CMD_BLIP, CMD_PANIC, CMD_SYNC };
 typedef struct {
     uint8_t t;
     union {
@@ -51,6 +51,7 @@ typedef struct {
         struct { float swing, dens, gate, strum; } g;
         struct { drums_t d; float k, h, r; } d;
         struct { uint8_t sound, motif; float level, cut; } b;
+        struct { int step; uint32_t at_ms; } y;   /* step: -1 = the clock is gone */
     } u;
 } cmd_t;
 #define QN 16u
@@ -97,6 +98,7 @@ static struct {
     int bl_kind;
     int step;
     float step_left;
+    uint8_t clocked;                    /* an outside MIDI clock leads: the steps keep counting even with nothing playing */
     /* envelope */
     float e, vel, atk_s, rel_s;
     int stage;
@@ -173,6 +175,7 @@ void eng_chord(const float notes[4], float bass, float glide_s)
     push(&c);
 }
 void eng_stop(void) { cmd_t c; c.t = CMD_STOP; push(&c); }
+void eng_sync(int step, uint32_t at_ms) { cmd_t c; c.t = CMD_SYNC; c.u.y.step = step; c.u.y.at_ms = at_ms; push(&c); }
 void eng_panic(void) { cmd_t c; c.t = CMD_PANIC; push(&c); }
 void eng_params(float bpm, float cut_hz, float q, float side, int drums_on)
 {
@@ -292,13 +295,31 @@ static void midi_chord_off(void)
         if (E.mv[i] != MIDI_NONE) { midi_off(E.mv[i]); E.mv[i] = MIDI_NONE; }
     if (E.bmotif == MOTIF_SUIT) midi_bass_off();
 }
-/* the chord changed under held notes (a glide): the new notes, legato */
-static void midi_retarget(void)
+/* the chord changed under held notes (a glide): the new notes, legato: the new ones on before the old ones off (a
+ * synthesizer's glide, set to legato, slides between them), the notes in both left alone */
+static int midi_in_set(const uint8_t *s, int n, uint8_t x)
 {
     int i;
-    for (i = 0; i < 4; i++)
-        if (E.mv[i] != MIDI_NONE && E.mv[i] != midi_note(E.v[i].target)) midi_voice_on(i);
-    if (E.mb != MIDI_NONE && E.mb != midi_note(E.btarget + (E.boct ? 12.0f : 0.0f))) midi_bass_on();
+    for (i = 0; i < n; i++) if (s[i] == x) return 1;
+    return 0;
+}
+static void midi_retarget(void)
+{
+    uint8_t old[5], neu[5];
+    int i, n = 0;
+    for (i = 0; i < 4; i++) {
+        old[i] = E.mv[i];
+        neu[i] = E.mv[i] == MIDI_NONE ? MIDI_NONE : midi_note(E.v[i].target);
+    }
+    old[4] = E.mb;
+    neu[4] = E.mb == MIDI_NONE || E.bsound == BASS_OFF ? MIDI_NONE : midi_note(E.btarget + (E.boct ? 12.0f : 0.0f));
+    for (i = 0; i < 5; i++)
+        if (neu[i] != MIDI_NONE && !midi_in_set(old, 5, neu[i]) && !midi_in_set(neu, i, neu[i])) { midi_on(neu[i], E.mvel); n++; }
+    for (i = 0; i < 5; i++)
+        if (old[i] != MIDI_NONE && !midi_in_set(neu, 5, old[i]) && !midi_in_set(old, i, old[i])) midi_off(old[i]);
+    for (i = 0; i < 4; i++) E.mv[i] = neu[i];
+    E.mb = neu[4];
+    (void)n;
 }
 
 static void hit(float vel, float gate_s, float atk)
@@ -340,7 +361,16 @@ static float step_len(int i)
     return (i & 1) ? d * (1.0f - sw) : d * (1.0f + sw);
 }
 
-static void start_transport(void) { E.running = 1; E.step = 0; E.step_left = 0.0f; }
+static void start_transport(void)
+{
+    E.running = 1;
+    if (!E.clocked) { E.step = 0; E.step_left = 0.0f; return; }
+    {   /* in time with the clock: the step under way, now, if it began less than 30 ms ago; else the next one */
+        int prev = (E.step + 15) & 15;
+        float in = step_len(prev) - E.step_left;
+        if (in < 0.03f * SR) { E.step = prev; E.step_left = -in; }
+    }
+}
 
 /* the transport runs while chords play a rhythm (with the drums), or the bass a motif */
 static int need_run(void) { return E.active && (!E.rh.hold || E.bmotif >= MOTIF_CONTRE); }   /* rhythm OFF: no drums */
@@ -488,6 +518,18 @@ static void run_commands(void)
             break;
         }
         case CMD_PANIC: E.active = 0; E.running = 0; E.e = 0.0f; E.stage = 0; midi_chord_off(); midi_bass_off(); break;
+        case CMD_SYNC: {    /* a beat of the outside clock: step (even) began at_ms (plat_ms) */
+            int st = c->u.y.step;
+            float a, len;
+            if (st < 0) { E.clocked = 0; break; }
+            a = (float)(plat_ms() - c->u.y.at_ms) * (SR / 1000.0f);
+            len = step_len(st);
+            if (a < 0.0f || a >= len) break;            /* (too late to place) */
+            if (E.clocked && E.running && E.step == st) E.step_left = -a;   /* not played yet: now */
+            else { E.step = (st + 1) & 15; E.step_left = len - a; }
+            E.clocked = 1;
+            break;
+        }
         }
         __asm__ volatile("" ::: "memory");
         cq_tail = (cq_tail + 1u) % QN;
@@ -636,9 +678,9 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                 float sum = 0.0f, y, bass, kv = 0.0f, fade = 1.0f, l, r, dh_l, dh_r;
                 float susL = p->sus * E.vel;
                 /* transport */
-                if (E.running) {
+                if (E.running || E.clocked) {
                     if (E.step_left <= 0.0f) {
-                        on_step();
+                        if (E.running) on_step();
                         E.step_left += step_len(E.step);
                         E.step = (E.step + 1) & 15;
                     }
