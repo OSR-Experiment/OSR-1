@@ -29,6 +29,9 @@ Une seule fonction par commande, sans touche shift.
 | ARP / SEQ / PLAY / REC | La lampe / une pirouette / l'image seule, sans infos / nourrir |
 | OCT- / OCT+ | Octave |
 | HOME + REC (tenir 3 s) | Retour aux réglages du premier démarrage (compte à rebours ; lâcher avant = rien) |
+| HOME + SCL | Mode ROOT : la touche jouée est la fondamentale, l'accord suit la tonalité (KEY) |
+| HOME + LFO | MIDI MAP : STANDARD, KEYSTEP 37, OFF (les potards d'un clavier MIDI) |
+| HOME + ENV | Canal MIDI : ALL, 1 à 16 |
 
 Au premier démarrage : pas de batterie, pas d'effets, une légère reverb. Quand on monte la batterie, le pattern de départ est KICK ONLY. L'écran du firmware est en anglais. Le sidechain (ON par défaut) pompe sur les
 kicks du pattern dès que la batterie est au-dessus de 0, même si le kick lui-même est à 0.
@@ -39,6 +42,14 @@ rythme, se fait écraser par le sidechain, chaque kick envoie une onde. L'eau ch
 Cutoff = eau claire ou sombre, reverb = points lumineux, delay = échos. Elle dort quand rien ne joue.
 
 Les réglages se sauvent tout seuls 4 secondes après le dernier changement, quand aucun accord ne joue.
+
+## Entrée MIDI (jack) / MIDI in
+
+Un clavier MIDI branché sur l'entrée MIDI IN (jack 3,5 mm) joue les accords comme les touches du FM-1, dans ses
+vraies octaves, et ses potards (CC) changent les réglages. Tout est expliqué en anglais dans [MIDI.md](MIDI.md).
+
+A MIDI keyboard on the 1/8" MIDI IN jack plays the chords like the FM-1's keys, and its knobs (CC) change the
+settings: see [MIDI.md](MIDI.md) (English).
 
 ## MIDI vers Ableton
 

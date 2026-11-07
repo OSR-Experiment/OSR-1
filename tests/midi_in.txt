@@ -1,0 +1,277 @@
+# MIDI in from the TRS jack: a keyboard plays the chords as the panel's keys do
+#   build/host/blop_host tests/midi_in.txt build/host
+wait 600
+expect rhythm 0
+# C4 (60) = key 7, as the panel's C4
+midi TRS 90 3C 64
+wait 30
+expect active 1
+expect chord 7
+midi TRS 80 3C 00
+wait 30
+expect active 0
+# a note-on at velocity 0 is a note-off; any channel (here 5)
+midi TRS 94 40 64
+wait 30
+expect active 1
+expect chord 11
+midi TRS 94 40 00
+wait 30
+expect active 0
+# legato: a new note takes over, the old one's release does nothing
+midi TRS 90 39 64
+wait 30
+expect chord 4
+midi TRS 90 3E 64
+wait 30
+expect chord 9
+midi TRS 80 39 00
+wait 30
+expect active 1
+expect chord 9
+midi TRS 80 3E 00
+wait 30
+expect active 0
+# outside F3..G5 the note folds in by octaves: C2 (36) plays the C4 key
+midi TRS 90 24 64
+wait 30
+expect chord 7
+expect shift -24
+# ... and plays two octaves lower; C6 (84) plays the C5 key's chord an octave higher
+midi TRS 80 24 00
+wait 30
+midi TRS 90 54 64
+wait 30
+expect chord 19
+expect shift 12
+# All Notes Off (CC 123) stops it
+midi TRS B0 7B 00
+wait 30
+expect active 0
+# USB's notes are not played (they could be Blop's own coming back from the computer)
+midi USB 90 3C 64
+wait 30
+expect active 0
+# controllers (CC) from the jack: each setting its own number, the whole range on 0..127
+midi TRS B0 14 00
+wait 30
+expect cutoff 0
+midi TRS B0 14 7F
+wait 30
+expect cutoff 100
+midi TRS B3 1B 00
+wait 30
+expect reverb 0
+midi TRS B0 6B 40
+wait 30
+expect blevel 50
+midi TRS B0 6E 7F
+wait 30
+expect dpat 9
+# the usual numbers too: 74 brightness = cutoff, 93 chorus
+midi TRS B0 4A 40
+wait 30
+expect cutoff 50
+midi TRS B0 5D 7F
+wait 30
+expect chorus 100
+# grid, rhythm, octave
+midi TRS B0 55 00
+wait 30
+expect grid 0
+midi TRS B0 56 00
+wait 30
+expect rhythm 0
+midi TRS B0 5A 7F
+wait 30
+expect octave 2
+midi TRS B0 5A 40
+wait 30
+expect octave 0
+# CC 15 picks the page, CC 16-19 are its K1-K4: page 1 (FX), K4 = reverb
+midi TRS B0 0F 14
+wait 30
+expect page 1
+midi TRS B0 13 7F
+wait 30
+expect reverb 100
+midi TRS B0 0F 00
+wait 30
+expect page 0
+midi TRS B0 10 00
+wait 30
+expect cutoff 0
+# a knob's sweep: only the latest value counts
+midi TRS B0 14 10
+midi TRS B0 14 7F
+wait 30
+expect cutoff 100
+# root mode (CC 89, or HOME + SCL): the key played is the chord's root, its type from the song key (C here)
+midi TRS B0 7B 00
+wait 30
+midi TRS B0 59 7F
+wait 30
+expect root 1
+midi TRS 90 3E 64
+wait 30
+expect croot 2
+midi TRS 80 3E 00
+wait 30
+midi TRS 90 35 64
+wait 30
+expect croot 5
+midi TRS 80 35 00
+wait 30
+# HOME + SCL turns it off again, and HOME's release does not change the page
+expect page 0
+press HOME
+wait 30
+tap SEL
+wait 30
+release HOME
+wait 30
+expect root 0
+expect page 0
+press HOME
+wait 30
+tap SEL
+wait 30
+release HOME
+wait 30
+expect root 1
+midi TRS B0 59 00
+wait 30
+expect root 0
+# a KeyStep's chord mode: C, Eb, G together play C's chord (the lowest), and pressing it again stops the rhythm
+midi TRS B0 7B 00
+wait 30
+turn ALGO 3
+wait 30
+midi TRS 90 3C 64
+midi TRS 90 3F 64
+midi TRS 90 43 64
+wait 30
+expect chord 7
+midi TRS 80 3C 00
+midi TRS 80 3F 00
+midi TRS 80 43 00
+wait 200
+expect active 1
+midi TRS 90 3C 64
+midi TRS 90 3F 64
+midi TRS 90 43 64
+wait 30
+expect active 0
+midi TRS 80 3C 00
+midi TRS 80 3F 00
+midi TRS 80 43 00
+wait 30
+turn ALGO -3
+wait 30
+expect rhythm 0
+# MIDI MAP STANDARD (the default): a KeyStep's 71 / 1 do nothing (other gear's resonance and mod wheel)
+expect midimap 0
+midi TRS B0 47 7F
+wait 30
+expect drums 0
+midi TRS B0 01 00
+wait 30
+expect bsound 2
+# HOME + LFO: MIDI MAP KEYSTEP 37
+press HOME
+wait 30
+tap LFO
+wait 30
+release HOME
+wait 30
+expect midimap 1
+expect page 0
+# the KeyStep 37's knobs as it comes: 74 cutoff, 71 kick, 76 hi-hat, 77 rim; a drum turned up switches the drums on
+midi TRS B0 17 00
+wait 30
+expect drums 0
+midi TRS B0 47 7F
+wait 30
+expect drums 70
+midi TRS B0 4A 7F
+wait 30
+expect cutoff 100
+expect dkick 100
+midi TRS B0 4C 00
+wait 30
+expect dhat 0
+midi TRS B0 4D 7F
+wait 30
+expect drim 100
+# a light, short press (on and off together) still plays: with a rhythm it latches
+midi TRS B0 7B 00
+wait 30
+turn ALGO 3
+wait 30
+midi TRS 90 3C 64
+midi TRS 80 3C 00
+wait 60
+expect active 1
+expect chord 7
+midi TRS 90 3E 64
+midi TRS 80 3E 00
+wait 60
+expect chord 9
+turn ALGO -3
+wait 30
+# the mod strip (CC 1): the bass sound (0 = off, the top = the last one)
+midi TRS B0 01 00
+wait 30
+expect bsound 0
+midi TRS B0 01 7F
+wait 30
+expect bsound 6
+# HOME + LFO again: OFF, the controllers do nothing (notes still play)
+press HOME
+wait 30
+tap LFO
+wait 30
+release HOME
+wait 30
+expect midimap 2
+midi TRS B0 14 00
+wait 30
+expect cutoff 100
+midi TRS 90 3C 64
+wait 30
+expect active 1
+midi TRS 80 3C 00
+wait 30
+press HOME
+wait 30
+tap LFO
+wait 30
+release HOME
+wait 30
+expect midimap 0
+# HOME + ENV: MIDI channel 1, then 2: channel 1's notes are not ours any more
+press HOME
+wait 30
+tap ENV
+wait 30
+release HOME
+wait 30
+expect midich 1
+press HOME
+wait 30
+tap ENV
+wait 30
+release HOME
+wait 30
+expect midich 2
+expect page 0
+midi TRS 90 3E 64
+wait 30
+expect active 0
+midi TRS 91 3E 64
+wait 30
+expect active 1
+expect chord 9
+midi TRS 81 3E 00
+wait 30
+expect active 0
