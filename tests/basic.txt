@@ -219,9 +219,8 @@ shot sleep.png
 turn PRESET 18
 wait 30
 expect sound 18
-tap SEL
-turn K4 10
-tap SEL
+midi TRS B0 76 26
+wait 30
 key 7 down
 wait 20
 wav pluck_strum.wav

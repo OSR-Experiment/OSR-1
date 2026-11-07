@@ -42,13 +42,35 @@ typedef struct {
     uint8_t dpat, dkick, dhat, drim;            /* drums */
     uint8_t bsound, blevel, bmotif, bcut;       /* bass */
     uint8_t creature, eyes, decor, acc;         /* decor */
-    uint8_t root;                               /* 1: the key pressed is the root, the chord fits the song key */
-    uint8_t midimap;                            /* MIDI in's controllers: MAP_STANDARD, MAP_KEYSTEP, MAP_OFF */
+    uint8_t root;                               /* SCALE: 0 the grid; 1.. the key pressed is the root, the chord
+                                                 * fits the song key in that scale (SCALE_NAME) */
+    uint8_t midimap;                            /* MIDI in's controllers: MAP_STANDARD, MAP_OFF */
     uint8_t midich;                             /* MIDI in's channel: 0 all, 1..16 one */
 } settings_t;
 static settings_t set;
-enum { MAP_STANDARD, MAP_KEYSTEP, MAP_OFF, NMAP };
-static const char *const MAP_NAME[NMAP] = {"STANDARD", "KEYSTEP 37", "OFF (NOTES ONLY)"};
+/* a player's own defaults (the first start, HOME + REC): my_setup.h beside app.c, if there is one (not in the
+ * repository). It may define BLOP_DEFAULT_MIDIMAP (MAP_STANDARD, MAP_OFF), BLOP_DEFAULT_SCALE (0 GRID,
+ * 1 MAJOR, 2 MINOR, 3 DORIAN, 4 MIXOLYDIAN, 5 HARM MINOR), BLOP_DEFAULT_KEY (0 C .. 11 B), BLOP_MIDI_OCTAVE (octaves
+ * added to the notes from the MIDI jack, -2 .. 2: a keyboard whose chords sound too low or high) */
+#ifdef __has_include
+#if __has_include("my_setup.h")
+#include "my_setup.h"
+#endif
+#endif
+#ifndef BLOP_DEFAULT_MIDIMAP
+#define BLOP_DEFAULT_MIDIMAP MAP_STANDARD
+#endif
+#ifndef BLOP_DEFAULT_SCALE
+#define BLOP_DEFAULT_SCALE 0
+#endif
+#ifndef BLOP_DEFAULT_KEY
+#define BLOP_DEFAULT_KEY 0
+#endif
+#ifndef BLOP_MIDI_OCTAVE
+#define BLOP_MIDI_OCTAVE 0
+#endif
+enum { MAP_STANDARD, MAP_OFF, NMAP };
+static const char *const MAP_NAME[NMAP] = {"STANDARD", "OFF (NOTES ONLY)"};
 static uint8_t set_dirty;
 static uint32_t dirty_at;             /* when the settings last changed (auto-save)*/
 
@@ -63,6 +85,7 @@ static void settings_defaults(void)
     set.dpat = 0; set.dkick = 75;   /* the drums start as a plain kick */ set.dhat = 30; set.drim = 25;
     set.bsound = BASS_ROND; set.blevel = 80; set.bmotif = MOTIF_SUIT; set.bcut = 45;
     set.creature = 0; set.eyes = 0; set.decor = 0; set.acc = 0;
+    set.midimap = BLOP_DEFAULT_MIDIMAP; set.root = BLOP_DEFAULT_SCALE; set.key = BLOP_DEFAULT_KEY;
 }
 
 static float glide_s(void) { return set.glide < 1u ? 0.0f : (float)set.glide * 0.015f; }
@@ -75,6 +98,19 @@ static chord_def_t grid_w[NGRID][8], grid_b[NGRID][5];
 static const char *const NOTE[12] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
 static const char *const RICH_NAME[4] = {"TRIAD", "7TH", "9TH", "LUSH"};
 static const char *const VOICING_NAME[3] = {"CLOSE", "OPEN", "WIDE"};
+/* SCALE (CHORDS page K4): GRID, Blop's grids; the others, the key pressed is the chord's root and the chord is the
+ * one the scale gives on that degree of the song key (KEY). SCALE_Q: the chord on each semitone above KEY (the scale's
+ * own seven, then borrowed ones on the other five); qualities as quality_ivs */
+#define NSCALE 6
+static const char *const SCALE_NAME[NSCALE] = {"GRID", "MAJOR", "MINOR", "DORIAN", "MIXOLYDIAN", "HARM MINOR"};
+static const char SCALE_Q[NSCALE - 1][12] = {
+    /*  1    b2   2    b3   3    4    #4   5    b6   6    b7   7 */
+    {'M', 'M', 'm', 'M', 'm', 'M', 'd', 'V', 'M', 'm', 'M', 'd'},   /* major: I ii iii IV V vi vii */
+    {'m', 'M', 'd', 'M', 'M', 'm', 'd', 'm', 'M', 'd', 'M', 'd'},   /* minor: i ii III iv v VI VII */
+    {'m', 'M', 'm', 'M', 'M', 'M', 'd', 'm', 'M', 'd', 'M', 'd'},   /* dorian: i ii III IV v vi VII */
+    {'M', 'M', 'm', 'M', 'd', 'M', 'd', 'm', 'M', 'm', 'M', 'd'},   /* mixolydian: I ii iii IV v vi VII */
+    {'m', 'M', 'd', 'a', 'M', 'm', 'd', 'V', 'M', 'd', 'M', 'd'},   /* harmonic minor: i ii III+ iv V7 VI vii */
+};
 static const uint8_t WHITE_IDX[8] = {0, 2, 4, 5, 7, 9, 11, 12}, BLACK_IDX[5] = {1, 3, 6, 8, 10};
 
 static int parse_chords(const char *s, chord_def_t *out, int max)
@@ -129,11 +165,10 @@ static chord_t build_chord(int key)
     chord_t c;
     const chord_def_t *d;
     int rel = key - KEY_C4, pos = ((rel % 12) + 12) % 12, oct = rel < 0 ? -1 : rel / 12, i;
-    if (set.root) {                      /* the root is the key's note (key 0 is F); the chord, the song key's */
-        static const char ROOT_Q[12] = {'M', 'M', 'm', 'M', 'm', 'M', 'd', 'V', 'M', 'm', 'M', 'd'};
+    if (set.root) {                      /* the root is the key's note (key 0 is F); the chord, the scale's */
         int pc = (key % 12 + 12 + 5) % 12;
         c.root = pc;
-        c.n = quality_ivs(ROOT_Q[(pc - set.key + 12) % 12], set.rich, c.iv);
+        c.n = quality_ivs(SCALE_Q[set.root - 1][(pc - set.key + 12) % 12], set.rich, c.iv);
         c.bass_off = 0;
         c.oct = oct;
         c.shift = clamp(set.octave * 12 + key_shift, -24, 24);
@@ -461,7 +496,7 @@ static const kdef_t KD[NPAGE][4] = {
     {{"DELAY", &set.delay, 0, 100, KD_OFF, G_FX, 0}, {"TREMOLO", &set.trem, 0, 100, KD_OFF, G_FX, 0},
      {"CHORUS", &set.chorus, 0, 100, KD_OFF, G_FX, 0}, {"REVERB", &set.reverb, 0, 100, KD_PCT, G_FX, 0}},
     {{"KEY", &set.key, 0, 11, KD_LIST, G_CHORD, NOTE}, {"VOICING", &set.voicing, 0, 2, KD_LIST, G_CHORD, VOICING_NAME},
-     {"RICHNESS", &set.rich, 0, 3, KD_LIST, G_CHORD, RICH_NAME}, {"STRUM", &set.strum, 0, 100, KD_OFF, G_GROOVE, 0}},
+     {"RICHNESS", &set.rich, 0, 3, KD_LIST, G_CHORD, RICH_NAME}, {"SCALE", &set.root, 0, NSCALE - 1, KD_LIST, G_CHORD, SCALE_NAME}},
     {{"BPM", &set.bpm, 70, 160, KD_BPM, G_PARAMS, 0}, {"SWING", &set.swing, 0, 100, KD_OFF, G_GROOVE, 0},
      {"DENSITY", &set.dens, 0, 100, KD_BIP, G_GROOVE, 0}, {"SIDECHAIN", &set.side, 0, 1, KD_LIST, G_PARAMS, ONOFF_NAME}},
     {{"SOUND", &set.bsound, 0, NBASS_SOUND - 1, KD_LIST, G_BASS, BASS_NAME}, {"LEVEL", &set.blevel, 0, 100, KD_PCT, G_BASS, 0},
@@ -478,7 +513,7 @@ static int settings_ok(void)
 {
     int p, k;
     if (set.magic != SET_MAGIC || set.grid >= NGRID || set.octave < -2 || set.octave > 2 || set.sound >= NFAMILY * PER_FAMILY
-        || set.rhythm >= NRHYTHM || set.page >= NPAGE || set.root > 1 || set.midimap >= NMAP || set.midich > 16)
+        || set.rhythm >= NRHYTHM || set.page >= NPAGE || set.root >= NSCALE || set.midimap >= NMAP || set.midich > 16)
         return 0;
     for (p = 0; p < NPAGE; p++)
         for (k = 0; k < 4; k++)
@@ -487,6 +522,7 @@ static int settings_ok(void)
 }
 
 /* ------------------------------------------------------------------ platform contract --- */
+static void slots_load(void);           /* (the memories, below) */
 void app_init(void)
 {
     int g;
@@ -494,6 +530,7 @@ void app_init(void)
         parse_chords(GRID_DEF[g].white, grid_w[g], 8);
         parse_chords(GRID_DEF[g].black, grid_b[g], 5);
     }
+    slots_load();
     if (plat_store_load(OBJ_SETTINGS, &set, sizeof set) != (int)sizeof set || !settings_ok())
         settings_defaults();
     eng_init();
@@ -648,11 +685,13 @@ static void encoder(int k, int32_t e)
     dirty();
 }
 
-static void root_mode(int on)
+/* HOME + SCL: SCALE between GRID and the last scale used (MAJOR at first) */
+static void root_toggle(void)
 {
-    if ((uint8_t)on == set.root) return;
-    set.root = (uint8_t)on;
-    app_say("ROOT", on ? "= KEY YOU PLAY" : "FROM THE GRID");
+    static uint8_t last = 1;
+    if (set.root) { last = set.root; set.root = 0; }
+    else set.root = last;
+    app_say("SCALE", SCALE_NAME[set.root]);
     rechord();
     dirty();
 }
@@ -663,7 +702,7 @@ static void button(int k)
     int p;
     if ((ui.btn >> B_HOME) & 1u && (k == B_SEL || k == B_LFO || k == B_ENV)) {
         ui.home_long = 1;                             /* (HOME's release then does nothing) */
-        if (k == B_SEL) root_mode(!set.root);         /* HOME + SCL: the root mode on / off */
+        if (k == B_SEL) root_toggle();                /* HOME + SCL: the scale on / off (the grid) */
         else if (k == B_LFO) {                        /* HOME + LFO: the next MIDI MAP */
             set.midimap = (uint8_t)((set.midimap + 1u) % NMAP);
             app_say("MIDI MAP", MAP_NAME[set.midimap]);
@@ -685,10 +724,7 @@ static void button(int k)
         }
     switch (k) {
     case B_HOME: ui.home_at = plat_ms(); ui.home_long = 0; return;    /* acts on release (held = help) */
-    case B_SAVE:
-        ui.bowl ^= 1u;
-        eng_muffle(ui.bowl ? 1.0f : 0.0f);
-        return;
+    case B_SAVE: return;                  /* acts on release (the bowl), unless a memory was used meanwhile (input) */
     case B_REC:
         if ((ui.btn >> B_HOME) & 1u) return;      /* HOME + REC: the reset (input), not food */
         fun(k);
@@ -706,14 +742,18 @@ static void button(int k)
     dirty();
 }
 
-/* a MIDI note (C4 = 60) as a key index: key 0 is F3 (53); outside F3..G5 it folds in by octaves, and *shift says how
- * far it was (the chord plays there: a keyboard's low and high octaves sound low and high) */
+/* a MIDI note (C4 = 60) as a key index: key 0 is F3 (53); outside F3..G5 it folds in by octaves. *shift: where the
+ * chord plays. A keyboard's three middle octaves (C3..C6, a 37-key keyboard as it comes) sound where the FM-1's keys
+ * do; an octave beyond them plays an octave lower or higher */
 static int note_key(int note, int *shift)
 {
     int idx = note - (60 - KEY_C4);
-    *shift = 0;
-    while (idx < 0) { idx += 12; *shift -= 12; }
-    while (idx >= NKEYS) { idx -= 12; *shift += 12; }
+    while (idx < 0) idx += 12;
+    while (idx >= NKEYS) idx -= 12;
+    if (note < 48) *shift = -12 * ((48 - note + 11) / 12);
+    else if (note > 84) *shift = 12 * ((note - 84 + 11) / 12);
+    else *shift = 0;
+    *shift += BLOP_MIDI_OCTAVE * 12;
     return idx;
 }
 static int mn_note = -1;                 /* the MIDI note holding the chord */
@@ -758,12 +798,10 @@ static void midi_notes(uint32_t now)
 /* the jack's controllers. Each setting has its own CC (page by page, four in a row); CC 16-19 are K1-K4 of the page on
  * the screen, so a controller with four knobs reaches everything; CC 15 picks the page. A knob's 0..127 spans the
  * setting's whole range. Any channel. */
-enum { CC_HERE = 0xF0, CC_PAGE, CC_GRID, CC_RHYTHM, CC_SOUND, CC_OCTAVE, CC_ROOT };
-/* MIDI MAP (HOME + LFO): STANDARD, the chart below; KEYSTEP 37, the chart and a KeyStep 37's knobs as it comes
- * (they send 74 71 76 77, the strip 1: numbers other gear uses for resonance and the mod wheel, so only on demand);
- * OFF, notes only. A preset for another controller: a name in MAP_NAME and its lines marked with it */
-#define KS 0x80u                          /* a line of the KEYSTEP 37 preset only */
-static const uint8_t CC_MAP[][3] = {      /* cc, page (or CC_*), knob (| KS) */
+enum { CC_HERE = 0xF0, CC_PAGE, CC_GRID, CC_RHYTHM, CC_SOUND, CC_OCTAVE, CC_STRUM };
+/* MIDI MAP (HOME + LFO): STANDARD, the chart below; OFF, notes only. The chart keeps to the numbers MIDI leaves free,
+ * plus 74 / 91 / 93 (cutoff, reverb, chorus, as on most synths), so a controller changes nothing by surprise */
+static const uint8_t CC_MAP[][3] = {      /* cc, page (or CC_*), knob */
     {20, PG_MAIN, 0}, {21, PG_MAIN, 1}, {22, PG_MAIN, 2}, {23, PG_MAIN, 3},           /* cutoff glide length drums */
     {24, PG_FX, 0}, {25, PG_FX, 1}, {26, PG_FX, 2}, {27, PG_FX, 3},                   /* delay tremolo chorus reverb */
     {28, PG_ACC, 0}, {29, PG_ACC, 1}, {30, PG_ACC, 2}, {31, PG_ACC, 3},               /* key voicing richness strum */
@@ -772,11 +810,8 @@ static const uint8_t CC_MAP[][3] = {      /* cc, page (or CC_*), knob (| KS) */
     {110, PG_DRUMS, 0}, {111, PG_DRUMS, 1}, {112, PG_DRUMS, 2}, {113, PG_DRUMS, 3},   /* pattern kick hi-hat rim */
     {114, PG_DECOR, 0}, {115, PG_DECOR, 1}, {116, PG_DECOR, 2}, {117, PG_DECOR, 3},   /* creature eyes backdrop extra */
     {74, PG_MAIN, 0}, {91, PG_FX, 3}, {93, PG_FX, 2},           /* the usual numbers: brightness, reverb, chorus */
-    {71, PG_DRUMS, 1 | KS}, {76, PG_DRUMS, 2 | KS}, {77, PG_DRUMS, 3 | KS},   /* KEYSTEP 37: knobs 2-4 kick, hi-hat,
-                                                                             * rim (knob 1, 74: cutoff, as above) */
-    {1, PG_BASS, 0 | KS},                                                  /* KEYSTEP 37: the strip, the bass sound */
     {16, CC_HERE, 0}, {17, CC_HERE, 1}, {18, CC_HERE, 2}, {19, CC_HERE, 3},
-    {15, CC_PAGE, 0}, {85, CC_GRID, 0}, {86, CC_RHYTHM, 0}, {87, CC_SOUND, 0}, {90, CC_OCTAVE, 0}, {89, CC_ROOT, 0},
+    {15, CC_PAGE, 0}, {85, CC_GRID, 0}, {86, CC_RHYTHM, 0}, {87, CC_SOUND, 0}, {90, CC_OCTAVE, 0}, {89, PG_ACC, 3}, {118, CC_STRUM, 0},
 };
 static int cc_step(int v, int n) { return v * n / 128; }   /* 0..127 -> 0..n-1, even steps */
 
@@ -804,8 +839,8 @@ static void cc_set(int cc, int v)
     char t[4];
     if (set.midimap == MAP_OFF) return;
     for (i = 0; i < sizeof CC_MAP / sizeof CC_MAP[0]; i++) {
-        int k = CC_MAP[i][2] & 3;
-        if (CC_MAP[i][0] != cc || ((CC_MAP[i][2] & KS) && set.midimap != MAP_KEYSTEP)) continue;
+        int k = CC_MAP[i][2];
+        if (CC_MAP[i][0] != cc) continue;
         switch (CC_MAP[i][1]) {
         case CC_HERE: cc_param(set.page, k, v); break;
         case CC_PAGE:
@@ -835,7 +870,14 @@ static void cc_set(int cc, int v)
             app_say("OCTAVE", t);
             rechord(); dirty();
             break;
-        case CC_ROOT: root_mode(v >= 64); break;
+        case CC_STRUM: {                  /* off the CHORDS page (SCALE took its knob), still here */
+            static const kdef_t ks = {"STRUM", &set.strum, 0, 100, KD_OFF, G_GROOVE, 0};
+            char b[16];
+            if ((n = cc_step(v, 101)) == set.strum) break;
+            set.strum = (uint8_t)n; apply_group(ks.grp); dirty();
+            knob_text(&ks, b); app_say(ks.lab, b);
+            break;
+        }
         default: cc_param(CC_MAP[i][1], k, v); break;
         }
     }
@@ -860,6 +902,58 @@ static void midi_ccs(void)
     }
 }
 
+/* ------------------------------------------------------------------ memories --- */
+/* 8 setups: hold SAVE, tap a white key from C4 to C5 to recall that memory, or hold the key 1.5 s to store the
+ * setup in it. The MIDI map and channel stay as they are (the keyboard's, not the song's). */
+#define NSLOT 8
+#define SLOT_MAGIC 0x534C5431u            /* "SLT1" */
+static const uint8_t SLOT_KEY[NSLOT] = {7, 9, 11, 12, 14, 16, 18, 19};   /* C4 D4 E4 F4 G4 A4 B4 C5 */
+static struct { uint32_t magic; settings_t s[NSLOT]; uint8_t used[NSLOT]; } slots;
+static int slot_k = -1;                   /* the memory whose key is held with SAVE */
+static uint32_t slot_at;
+static uint8_t slot_done, save_used;
+
+static int slot_of(int key)
+{
+    int i;
+    for (i = 0; i < NSLOT; i++) if (SLOT_KEY[i] == key) return i;
+    return -1;
+}
+
+static void slots_load(void)
+{
+    if (plat_store_load(OBJ_SLOTS, &slots, sizeof slots) != (int)sizeof slots || slots.magic != SLOT_MAGIC) {
+        memset(&slots, 0, sizeof slots);
+        slots.magic = SLOT_MAGIC;
+    }
+}
+
+static void slot_store(int i)
+{
+    char t[4];
+    slots.s[i] = set;
+    slots.used[i] = 1;
+    t[0] = (char)('1' + i); t[1] = 0;
+    if (plat_store_save(OBJ_SLOTS, &slots, sizeof slots) == 0) app_say("STORED IN MEMORY", t);
+    else app_say("MEMORY", "COULD NOT STORE");
+}
+
+static void slot_recall(int i)
+{
+    settings_t was = set;
+    char t[4];
+    t[0] = (char)('1' + i); t[1] = 0;
+    if (!slots.used[i]) { app_say("MEMORY EMPTY", t); return; }
+    set = slots.s[i];
+    set.midimap = was.midimap; set.midich = was.midich; set.page = was.page;
+    if (!settings_ok()) { set = was; app_say("MEMORY", "NOT READABLE"); return; }
+    send_sound(); send_rhythm(); send_groove(); send_drums(); send_bass(); send_fx(); send_params();
+    if (!set.rhythm && held_idx < 0 && active) stop();
+    rechord();
+    dirty();
+    app_say("MEMORY", t);
+}
+
 static void input(void)
 {
     uint32_t keys = plat_keys(), btn = plat_buttons(), k, lit_keys = 0, lit_btn = 0, now = plat_ms();
@@ -869,6 +963,15 @@ static void input(void)
     midi_ccs();
     for (k = 0; k < NKEYS; k++) {
         uint32_t bit = 1u << k;
+        if ((keys & bit) && !(ui.keys & bit) && ((btn >> B_SAVE) & 1u)) {   /* SAVE held: a memory, not a chord */
+            if (slot_of((int)k) >= 0) { slot_k = (int)k; slot_at = now; slot_done = 0; save_used = 1; }
+            continue;
+        }
+        if (!(keys & bit) && (ui.keys & bit) && slot_k == (int)k) {         /* let go before 1.5 s: recall */
+            if (!slot_done) slot_recall(slot_of((int)k));
+            slot_k = -1;
+            continue;
+        }
         if ((keys & bit) && !(ui.keys & bit)) {
             /* with a rhythm the chord keeps playing: the same key again stops it */
             if (set.rhythm && active && held_idx < 0 && cur_idx == (int)k) stop();
@@ -881,6 +984,7 @@ static void input(void)
     for (k = 0; k < NB; k++) {
         uint32_t bit = 1u << k;
         if ((btn & bit) && !(ui.btn & bit)) button((int)k);
+        if ((btn & bit) && !(ui.btn & bit) && k == B_SAVE) save_used = 0;
     }
     /* HOME + REC held 3 s: back to the settings of the first start (a countdown; let go before: nothing) */
     if (((btn >> B_HOME) & 1u) && ((btn >> B_REC) & 1u)) {
@@ -920,6 +1024,13 @@ static void input(void)
     for (k = 0; k < NE; k++)
         if ((e = plat_enc((int)k)) != 0)
             encoder((int)k, e);
+    /* a memory's key held 1.5 s with SAVE: store */
+    if (slot_k >= 0 && !slot_done && now - slot_at >= 1500u) { slot_store(slot_of(slot_k)); slot_done = 1; }
+    /* SAVE let go: the bowl, if no memory was used meanwhile */
+    if (!((btn >> B_SAVE) & 1u) && ((ui.btn >> B_SAVE) & 1u)) {
+        if (!save_used) { ui.bowl ^= 1u; eng_muffle(ui.bowl ? 1.0f : 0.0f); }
+        slot_k = -1;
+    }
     ui.keys = keys;
     ui.btn = btn;
     /* auto-save: 4 s after the last change, and never while a chord plays (a flash write stops the sound) */
@@ -1913,6 +2024,14 @@ int app_expect(const char *what, int *got)
     else if (!strcmp(what, "midimap")) *got = set.midimap;
     else if (!strcmp(what, "midich")) *got = set.midich;
     else if (!strcmp(what, "croot")) *got = active ? build_chord(cur_idx).root : -1;
+    else if (!strcmp(what, "cminor")) {         /* the chord playing has a minor third (1), a major one (0) */
+        chord_t c = build_chord(cur_idx);
+        int i, m = 0;
+        for (i = 0; i < c.n; i++) if (c.iv[i] == 3) m = 1;
+        *got = active ? m : -1;
+    }
+    else if (!strcmp(what, "strum")) *got = set.strum;
+    else if (!strcmp(what, "slots")) { int i, n = 0; for (i = 0; i < NSLOT; i++) n += slots.used[i]; *got = n; }
     else if (!strcmp(what, "dpat")) *got = set.dpat;
     else if (!strcmp(what, "dkick")) *got = set.dkick;
     else if (!strcmp(what, "dhat")) *got = set.dhat;

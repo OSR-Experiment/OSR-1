@@ -13,8 +13,8 @@
 #define APP_BLOCK 256u                   /* frames per audio block: 5.8 ms at 44.1 kHz */
 
 /* the store: the app's settings and the panel calibration (the platform's), and their flash offsets */
-enum { OBJ_SETTINGS, OBJ_PANEL, OBJ_NOBJ };
-#define APP_STORE_MAP {0xFC000u, 0xDC000u}
+enum { OBJ_SETTINGS, OBJ_PANEL, OBJ_SLOTS, OBJ_NOBJ };   /* OBJ_SLOTS: the 8 memories (SAVE + a white key) */
+#define APP_STORE_MAP {0xFC000u, 0xDC000u, 0xDA000u}
 
 void app_init(void);
 void app_render(int32_t *lr, uint32_t n, uint32_t master_q12);

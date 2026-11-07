@@ -36,13 +36,25 @@ expect active 0
 midi TRS 90 24 64
 wait 30
 expect chord 7
-expect shift -24
-# ... and plays two octaves lower; C6 (84) plays the C5 key's chord an octave higher
+expect shift -12
+# ... an octave lower (below C3); C3 (48) and C6 (84) play at the FM-1's own pitch; C#6 (85) an octave higher
 midi TRS 80 24 00
+wait 30
+midi TRS 90 30 64
+wait 30
+expect chord 7
+expect shift 0
+midi TRS 80 30 00
 wait 30
 midi TRS 90 54 64
 wait 30
 expect chord 19
+expect shift 0
+midi TRS 80 54 00
+wait 30
+midi TRS 90 55 64
+wait 30
+expect chord 20
 expect shift 12
 # All Notes Off (CC 123) stops it
 midi TRS B0 7B 00
@@ -106,10 +118,11 @@ midi TRS B0 14 10
 midi TRS B0 14 7F
 wait 30
 expect cutoff 100
-# root mode (CC 89, or HOME + SCL): the key played is the chord's root, its type from the song key (C here)
+# SCALE (CC 89, CHORDS page K4, HOME + SCL): the key played is the chord's root, its type from the song key (C here);
+# CC 89 at 32: MAJOR
 midi TRS B0 7B 00
 wait 30
-midi TRS B0 59 7F
+midi TRS B0 59 20
 wait 30
 expect root 1
 midi TRS 90 3E 64
@@ -142,7 +155,7 @@ expect root 1
 midi TRS B0 59 00
 wait 30
 expect root 0
-# a KeyStep's chord mode: C, Eb, G together play C's chord (the lowest), and pressing it again stops the rhythm
+# a keyboard's chord mode: C, Eb, G together play C's chord (the lowest), and pressing it again stops the rhythm
 midi TRS B0 7B 00
 wait 30
 turn ALGO 3
@@ -169,7 +182,7 @@ wait 30
 turn ALGO -3
 wait 30
 expect rhythm 0
-# MIDI MAP STANDARD (the default): a KeyStep's 71 / 1 do nothing (other gear's resonance and mod wheel)
+# MIDI MAP STANDARD (the default): 71 / 1 do nothing (other gear's resonance and mod wheel)
 expect midimap 0
 midi TRS B0 47 7F
 wait 30
@@ -177,32 +190,20 @@ expect drums 0
 midi TRS B0 01 00
 wait 30
 expect bsound 2
-# HOME + LFO: MIDI MAP KEYSTEP 37
-press HOME
-wait 30
-tap LFO
-wait 30
-release HOME
-wait 30
-expect midimap 1
-expect page 0
-# the KeyStep 37's knobs as it comes: 74 cutoff, 71 kick, 76 hi-hat, 77 rim; a drum turned up switches the drums on
-midi TRS B0 17 00
-wait 30
-expect drums 0
-midi TRS B0 47 7F
+# a drum turned up (111 kick, 112 hi-hat, 113 rim) while the drums are off switches them on
+midi TRS B0 6F 7F
 wait 30
 expect drums 70
+expect dkick 100
+midi TRS B0 70 00
+wait 30
+expect dhat 0
+midi TRS B0 71 7F
+wait 30
+expect drim 100
 midi TRS B0 4A 7F
 wait 30
 expect cutoff 100
-expect dkick 100
-midi TRS B0 4C 00
-wait 30
-expect dhat 0
-midi TRS B0 4D 7F
-wait 30
-expect drim 100
 # a light, short press (on and off together) still plays: with a rhythm it latches
 midi TRS B0 7B 00
 wait 30
@@ -219,21 +220,15 @@ wait 60
 expect chord 9
 turn ALGO -3
 wait 30
-# the mod strip (CC 1): the bass sound (0 = off, the top = the last one)
-midi TRS B0 01 00
-wait 30
-expect bsound 0
-midi TRS B0 01 7F
-wait 30
-expect bsound 6
-# HOME + LFO again: OFF, the controllers do nothing (notes still play)
+# HOME + LFO: OFF, the controllers do nothing (notes still play)
 press HOME
 wait 30
 tap LFO
 wait 30
 release HOME
 wait 30
-expect midimap 2
+expect midimap 1
+expect page 0
 midi TRS B0 14 00
 wait 30
 expect cutoff 100
@@ -275,3 +270,106 @@ expect chord 9
 midi TRS 81 3E 00
 wait 30
 expect active 0
+# (the MIDI channel is 2 from here)
+# SCALE in C: MAJOR's D is minor; MINOR's C is minor, its Eb major; HARM MINOR's G is major (V7)
+midi TRS B1 7B 00
+wait 30
+midi TRS B1 59 20
+wait 30
+expect root 1
+midi TRS 91 3E 64
+wait 30
+expect cminor 1
+midi TRS 81 3E 00
+wait 30
+midi TRS B1 59 30
+wait 30
+expect root 2
+midi TRS 91 3C 64
+wait 30
+expect cminor 1
+midi TRS 81 3C 00
+wait 30
+midi TRS 91 3F 64
+wait 30
+expect cminor 0
+midi TRS 81 3F 00
+wait 30
+midi TRS B1 59 7F
+wait 30
+expect root 5
+midi TRS 91 43 64
+wait 30
+expect croot 7
+expect cminor 0
+midi TRS 81 43 00
+wait 30
+# HOME + SCL: off (GRID), and back to the last scale (HARM MINOR)
+press HOME
+wait 30
+tap SEL
+wait 30
+release HOME
+wait 30
+expect root 0
+press HOME
+wait 30
+tap SEL
+wait 30
+release HOME
+wait 30
+expect root 5
+midi TRS B1 59 00
+wait 30
+expect root 0
+# STRUM left the CHORDS page for SCALE: CC 118 still sets it
+midi TRS B1 76 7F
+wait 30
+expect strum 100
+midi TRS B1 76 00
+wait 30
+expect strum 0
+# memories: hold SAVE, hold C4 1.5 s = store memory 1; another sound; SAVE + tap C4 = recall it; SAVE alone = the bowl
+turn PRESET 3
+wait 30
+expect sound 3
+press SAVE
+wait 30
+key 7 down
+wait 1700
+key 7 up
+wait 30
+release SAVE
+wait 30
+expect slots 1
+expect bowl 0
+expect active 0
+turn PRESET 5
+wait 30
+expect sound 8
+press SAVE
+wait 30
+key 7 down
+wait 100
+key 7 up
+wait 30
+release SAVE
+wait 30
+expect sound 3
+expect bowl 0
+# an empty memory (D4) changes nothing
+press SAVE
+wait 30
+key 9 down
+wait 100
+key 9 up
+wait 30
+release SAVE
+wait 30
+expect sound 3
+tap SAVE
+wait 30
+expect bowl 1
+tap SAVE
+wait 30
+expect bowl 0

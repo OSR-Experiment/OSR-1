@@ -26,10 +26,13 @@ docker run --rm --platform linux/amd64 \
     -e JIELI_TOOLCHAIN="/jieli/$TC" -e AC79_SDK=/jieli/ac79-sdk "$IMG" sh -c '
         set -e
         rm -rf build/host
+        # the tests check the standard defaults: a player'"'"'s my_setup.h waits aside meanwhile (back for the firmware)
+        if [ -f my_setup.h ]; then mv my_setup.h .my_setup.h.aside; trap "mv .my_setup.h.aside my_setup.h" EXIT; fi
         python3 fm1-base/tools/build.py . --host
         build/host/blop_host tests/basic.txt build/host > build/host/basic.log
         build/host/blop_host tests/midi_in.txt build/host > build/host/midi_in.log
         echo "simulator tests: ok"
+        if [ -f .my_setup.h.aside ]; then mv .my_setup.h.aside my_setup.h; trap - EXIT; echo "my_setup.h: in"; fi
         python3 fm1-base/tools/build.py .'
 ls -la build/*.fwsc
 if [ -n "$1" ]; then
@@ -38,5 +41,6 @@ if [ -n "$1" ]; then
     mkdir -p "$V"
     cp build/blop.fwsc "$V/blop-${1%%-*}.fwsc"
     cp app.c tests/midi_in.txt "$V/"
+    [ -f my_setup.h ] && cp my_setup.h "$V/"
     echo "kept: $V/blop-${1%%-*}.fwsc  (add a line about it to versions/README.md)"
 fi

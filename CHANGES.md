@@ -1,31 +1,39 @@
-# Changes in this branch (MIDI in and controllers)
+# What changed since Blop 1.1.0
 
-Based on Blop 1.1.0. On a real FM-1 (a newer unit, UC25HQ80 flash) with an Arturia KeyStep 37 on the MIDI IN jack:
-notes from the jack and direct installs are confirmed; the rest is being tried there now. Everything is covered in the
-host simulator (`tests/midi_in.txt`, run by the workflow).
+Tested in the host simulator (`tests/basic.txt`, `tests/midi_in.txt`, run by the workflow) and on a real FM-1 (a newer
+unit, UC25HQ80 flash) with a MIDI keyboard on the MIDI IN jack.
 
-## Fixes
+## Blop 1.1.0 and now, side by side
 
-- **MIDI IN jack did nothing.** Blop dropped every message from the TRS jack (`if (port != PORT_USB) continue;`) and
-  had no note input at all. Notes from the jack now play the chords like the FM-1's keys.
-- **Newer FM-1s (UC25HQ80 flash) refused updates and lost their settings.** fm1-base was pinned at 4587fda
-  (2026-10-28), before fm1-base learned that part (e75b072, 2026-11-04): on those units `flash_ok` was 0, so saves stayed
-  in RAM and the install entry ignored the upgrade command ("stopped after 0 requests"; the only way out was back to
-  M-VAVE's firmware first). fm1-base is now 317cb86: updates install directly and settings are saved.
-- **A keyboard's octaves all sounded the same:** notes outside F3..G5 now play the chord in their own octave.
-- **A keyboard's chord mode** (several notes at once) counts as one note, the lowest; latch / press-again-to-stop works
-  with it.
+| | Blop 1.1.0 (original) | Now |
+| --- | --- | --- |
+| **MIDI IN jack (1/8")** | Ignored: every message dropped | Notes play the chords; CCs change the settings; clock followed |
+| **Newer FM-1s (UC25HQ80 flash)** | Refused updates ("stopped after 0 requests") and lost their settings at power-off | Update directly, settings saved (fm1-base 4587fda → 317cb86) |
+| **A keyboard's octaves** | — | C3–C6 at the FM-1's pitch, beyond: an octave lower / higher |
+| **A keyboard's chord mode** | — | Counts as one note (the lowest); latch and press-again-to-stop keep working |
+| **Light, short presses** | — | Always play |
+| **MIDI controllers (CC)** | — | Every setting, with a chart (MIDI.md); 4 knobs reach all (CC 16–19 = the page's K1–K4) |
+| **MIDI MAP** | — | HOME + LFO: STANDARD (default) / OFF |
+| **MIDI CHANNEL** | — | HOME + ENV: ALL (default) / 1–16 |
+| **Chords** | The grids only: each key is a slot in a progression | ★ **SCALE** (CHORDS page K4): GRID, or MAJOR / MINOR / DORIAN / MIXOLYDIAN / HARM MINOR, where the key you press is the root. HOME + SCL toggles |
+| **STRUM** | CHORDS page K4 | CC 118 (SCALE took the knob; the value is kept) |
+| **Memories** | One setup (saved by itself) | ★ **8 memories**: SAVE + hold a white key 1.5 s = store, SAVE + tap = recall |
+| **SAVE button** | The bowl, on press | The bowl, on release (unless a memory was used) |
+| **Own defaults** | — | Optional `my_setup.h`: MIDI map, scale, key, the jack's octave |
+| **Building on a Mac** | — | `tools/build_mac.sh` (Docker) |
 
-## New
+Unchanged: the FM-1's own keys and controls (except K4 of the CHORDS page), the sounds, rhythms, bass, drums, effects,
+the screen and the creature; USB clock in and MIDI out.
 
-- MIDI CC control of every setting (MIDI.md has the chart), with **MIDI MAP** presets (HOME + LFO): STANDARD
-  (default), KEYSTEP 37, OFF.
-- **MIDI CHANNEL** (HOME + ENV): ALL (default) or 1-16.
-- **ROOT mode** (HOME + SCL, or CC 89): the key pressed is the chord's root, the chord fits the song key. Off by default.
-- MIDI clock from the jack is followed like USB's.
-- The settings use the struct's three spare bytes (root, midimap, midich): saved settings stay valid, no reset.
-- `tools/build_mac.sh`: the firmware built on a Mac in a Docker container (the toolchain is Linux x86-64 only).
-- `tests/midi_in.txt`: notes, octaves, chord mode, short presses, latch, CCs, presets, channel, ROOT mode.
+## Details
 
-Unchanged: the FM-1's own keys, buttons, sounds, screen; USB MIDI in (clock) and out; notes from USB are still not
-played.
+- **MIDI IN.** `app_tick` dropped everything not from USB (`if (port != PORT_USB) continue;`). The jack's notes and
+  CCs now go through two small rings to the main loop (the tick is an interrupt); notes play as key presses.
+- **Newer FM-1s.** On units with the UC25HQ80 flash, fm1-base before e75b072 (2026-11-04) left `flash_ok` at 0: saves
+  stayed in RAM and the update entry ignored the upgrade command. The submodule is now at 317cb86.
+- **Notes that come together** wait 8 ms for each other; a release plays a note still waiting (a short press is never
+  lost).
+- **Settings:** `root` (the scale), `midimap` and `midich` use the settings struct's three spare bytes, so settings
+  saved by 1.1.0 stay valid. The memories are a new store object (`OBJ_SLOTS`, at 0xDA000).
+- **Tests:** `tests/midi_in.txt` covers notes, octaves, chord mode, short presses, latch, CCs, presets, channel,
+  scales, strum and memories.
