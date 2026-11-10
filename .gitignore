@@ -1,1 +1,4 @@
 build/
+.venv/
+my_setup.h
+versions/

@@ -19,25 +19,29 @@ shot chord.png
 key 7 up
 wait 30
 expect active 0
-# a grid, a rhythm: the chord keeps playing (latch); the drums from the main page's K4 (kick only at first)
+# a grid, a rhythm: the chord keeps playing (latch); the drums from the MIXER's K3 (kick only at first)
 turn SELECT 2
 wait 30
 expect grid 2
 turn ALGO 8
 wait 30
 expect rhythm 8
-turn K4 1
+tap ARP
+wait 30
+turn K3 1
 wait 150
-turn K4 1
+turn K3 1
 wait 150
-turn K4 1
+turn K3 1
 wait 150
-turn K4 1
+turn K3 1
 wait 150
-turn K4 1
+turn K3 1
 wait 30
 expect drums 15
-turn K4 12
+turn K3 12
+wait 30
+tap ARP
 wait 30
 key 9 down
 wait 20
@@ -176,27 +180,44 @@ shot bowl.png
 tap SAVE
 wait 600
 expect bowl 0
-tap REC
+press HOME
+tap ARP
+release HOME
 wait 700
 shot food.png
 wait 2500
 shot food2.png
-tap ARP
+press HOME
+tap SAVE
+release HOME
 wait 500
 expect dark 1
+expect bowl 0
 shot dark.png
-tap ARP
+press HOME
+tap SAVE
+release HOME
 wait 30
+expect dark 0
+expect bowl 0
+expect page 0
+press HOME
 tap PLAY
+release HOME
 wait 600
 expect clean 1
 shot clean.png
+press HOME
 tap PLAY
+release HOME
 wait 30
 expect clean 0
+press HOME
 tap SEQ
+release HOME
 wait 300
 shot pirouette.png
+expect page 0
 # HOME held: the help screen
 press HOME
 wait 900
@@ -219,9 +240,8 @@ shot sleep.png
 turn PRESET 18
 wait 30
 expect sound 18
-tap SEL
-turn K4 10
-tap SEL
+midi TRS B0 76 26
+wait 30
 key 7 down
 wait 20
 wav pluck_strum.wav

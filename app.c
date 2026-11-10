@@ -25,8 +25,15 @@
  *   Settings save themselves a few seconds after the last change. */
 #include "fastmath.h"
 #include "engine.h"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"    /* (data.h's 32 sounds do not list the analog fields) */
 #include "data.h"
+#include "analog.h"
+#pragma GCC diagnostic pop
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"    /* (rows without the second page's voices) */
 #include "patterns.h"
+#pragma GCC diagnostic pop
 
 /* ------------------------------------------------------------------ settings --- */
 #define SET_MAGIC 0x4F535236u            /* "OSR6" (v6: bass 80 %, 2-STEP first) */
@@ -42,11 +49,46 @@ typedef struct {
     uint8_t dpat, dkick, dhat, drim;            /* drums */
     uint8_t bsound, blevel, bmotif, bcut;       /* bass */
     uint8_t creature, eyes, decor, acc;         /* decor */
-    uint8_t rsv[3];
+    uint8_t root;                               /* SCALE: 0 the grid; 1.. the key pressed is the root, the chord
+                                                 * fits the song key in that scale (SCALE_NAME) */
+    uint8_t midimap;                            /* MIDI in's controllers: MAP_STANDARD, MAP_KEYSTEP, MAP_OFF */
+    uint8_t midich;                             /* MIDI in's channel: 0 all, 1..16 one */
+    uint8_t synth, master;                      /* MIXER (ARP): the chords' level, the output's (0..100) */
+    uint8_t dsn, dcl, dtm, dbl;                 /* DRUMS 2 (HOME + GLO): snare, clap, tom, cowbell (0..100) */
 } settings_t;
+typedef char assert_dsn_at_42[(__builtin_offsetof(settings_t, dsn) == 42) ? 1 : -1];
+#define SET_V2_SIZE 44u                         /* settings saved from v18 to v24: the mixer, no second drum page */
 static settings_t set;
+static uint8_t save_used;                 /* SAVE was used with a key or HOME: no bowl on its release */
+static uint32_t cpu_peak;                 /* the audio load's peak since HOME + OCT+ showed it */
+#define SET_V1_SIZE __builtin_offsetof(settings_t, synth)   /* settings saved before the mixer: 40 bytes, loaded as they are */
+/* a player's own defaults (the first start, HOME + REC): my_setup.h beside app.c, if there is one (not in the
+ * repository). It may define BLOP_DEFAULT_MIDIMAP (MAP_STANDARD, MAP_KEYSTEP, MAP_OFF), BLOP_DEFAULT_SCALE (0 GRID,
+ * 1 MAJOR, 2 MINOR, 3 DORIAN, 4 MIXOLYDIAN, 5 HARM MINOR), BLOP_DEFAULT_KEY (0 C .. 11 B), BLOP_MIDI_OCTAVE (octaves
+ * added to the notes from the MIDI jack, -2 .. 2: a keyboard whose chords sound too low or high) */
+#ifdef __has_include
+#if __has_include("my_setup.h")
+#include "my_setup.h"
+#endif
+#endif
+#ifndef BLOP_DEFAULT_MIDIMAP
+#define BLOP_DEFAULT_MIDIMAP MAP_STANDARD
+#endif
+#ifndef BLOP_DEFAULT_SCALE
+#define BLOP_DEFAULT_SCALE 0
+#endif
+#ifndef BLOP_DEFAULT_KEY
+#define BLOP_DEFAULT_KEY 0
+#endif
+#ifndef BLOP_MIDI_OCTAVE
+#define BLOP_MIDI_OCTAVE 0
+#endif
+enum { MAP_STANDARD, MAP_KEYSTEP, MAP_OFF, NMAP };
+static const char *const MAP_NAME[NMAP] = {"STANDARD", "KEYSTEP 37", "OFF (NOTES ONLY)"};
 static uint8_t set_dirty;
 static uint32_t dirty_at;             /* when the settings last changed (auto-save)*/
+
+static void drums2_defaults(settings_t *t) { t->dsn = 70; t->dcl = 60; t->dtm = 60; t->dbl = 50; }
 
 static void settings_defaults(void)
 {
@@ -59,6 +101,9 @@ static void settings_defaults(void)
     set.dpat = 0; set.dkick = 75;   /* the drums start as a plain kick */ set.dhat = 30; set.drim = 25;
     set.bsound = BASS_ROND; set.blevel = 80; set.bmotif = MOTIF_SUIT; set.bcut = 45;
     set.creature = 0; set.eyes = 0; set.decor = 0; set.acc = 0;
+    set.midimap = BLOP_DEFAULT_MIDIMAP; set.root = BLOP_DEFAULT_SCALE; set.key = BLOP_DEFAULT_KEY;
+    set.synth = 100; set.master = 100;
+    set.dsn = 70; set.dcl = 60; set.dtm = 60; set.dbl = 50;
 }
 
 static float glide_s(void) { return set.glide < 1u ? 0.0f : (float)set.glide * 0.015f; }
@@ -71,6 +116,19 @@ static chord_def_t grid_w[NGRID][8], grid_b[NGRID][5];
 static const char *const NOTE[12] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
 static const char *const RICH_NAME[4] = {"TRIAD", "7TH", "9TH", "LUSH"};
 static const char *const VOICING_NAME[3] = {"CLOSE", "OPEN", "WIDE"};
+/* SCALE (CHORDS page K4): GRID, Blop's grids; the others, the key pressed is the chord's root and the chord is the
+ * one the scale gives on that degree of the song key (KEY). SCALE_Q: the chord on each semitone above KEY (the scale's
+ * own seven, then borrowed ones on the other five); qualities as quality_ivs */
+#define NSCALE 6
+static const char *const SCALE_NAME[NSCALE] = {"GRID", "MAJOR", "MINOR", "DORIAN", "MIXOLYDIAN", "HARM MINOR"};
+static const char SCALE_Q[NSCALE - 1][12] = {
+    /*  1    b2   2    b3   3    4    #4   5    b6   6    b7   7 */
+    {'M', 'M', 'm', 'M', 'm', 'M', 'd', 'V', 'M', 'm', 'M', 'd'},   /* major: I ii iii IV V vi vii */
+    {'m', 'M', 'd', 'M', 'M', 'm', 'd', 'm', 'M', 'd', 'M', 'd'},   /* minor: i ii III iv v VI VII */
+    {'m', 'M', 'm', 'M', 'M', 'M', 'd', 'm', 'M', 'd', 'M', 'd'},   /* dorian: i ii III IV v vi VII */
+    {'M', 'M', 'm', 'M', 'd', 'M', 'd', 'm', 'M', 'm', 'M', 'd'},   /* mixolydian: I ii iii IV v vi VII */
+    {'m', 'M', 'd', 'a', 'M', 'm', 'd', 'V', 'M', 'd', 'M', 'd'},   /* harmonic minor: i ii III+ iv V7 VI vii */
+};
 static const uint8_t WHITE_IDX[8] = {0, 2, 4, 5, 7, 9, 11, 12}, BLACK_IDX[5] = {1, 3, 6, 8, 10};
 
 static int parse_chords(const char *s, chord_def_t *out, int max)
@@ -119,11 +177,21 @@ static int quality_ivs(char q, int rich, int8_t *iv)
 typedef struct { int root; int8_t iv[6]; int n; int bass_off; int oct; int shift; } chord_t;
 
 #define KEY_C4 7                         /* key index of C4 (key 0 is F3) */
+static int key_shift;                    /* semitones a MIDI note lies beyond the panel's keys (0: the panel) */
 static chord_t build_chord(int key)
 {
     chord_t c;
     const chord_def_t *d;
     int rel = key - KEY_C4, pos = ((rel % 12) + 12) % 12, oct = rel < 0 ? -1 : rel / 12, i;
+    if (set.root) {                      /* the root is the key's note (key 0 is F); the chord, the scale's */
+        int pc = (key % 12 + 12 + 5) % 12;
+        c.root = pc;
+        c.n = quality_ivs(SCALE_Q[set.root - 1][(pc - set.key + 12) % 12], set.rich, c.iv);
+        c.bass_off = 0;
+        c.oct = oct;
+        c.shift = clamp(set.octave * 12 + key_shift, -24, 24);
+        return c;
+    }
     d = &grid_w[set.grid][0];
     if (pos == 0 && oct >= 1) d = &grid_w[set.grid][7];            /* C5: the grid's 8th chord */
     else {
@@ -134,7 +202,7 @@ static chord_t build_chord(int key)
     c.n = quality_ivs(d->q, set.rich, c.iv);
     c.bass_off = 0;
     c.oct = oct;
-    c.shift = set.octave * 12;
+    c.shift = clamp(set.octave * 12 + key_shift, -24, 24);
     return c;
 }
 
@@ -230,7 +298,7 @@ static void spread(float *n, int mode)   /* SERRE as is, OUVERT drop 2, LARGE dr
 }
 
 /* ------------------------------------------------------------------ engine links --- */
-static void send_sound(void) { eng_sound(&SOUNDS[set.sound]); }
+static void send_sound(void) { eng_sound(snd_def(set.sound)); }
 static void send_rhythm(void)
 {
     rhythm_t r;
@@ -270,13 +338,36 @@ static float ck_bpm;                              /* the tempo it gives (0: no c
 static uint32_t ck_seen_seq;
 static uint8_t ck_placed;                         /* the engine's steps follow the beats */
 
+/* MIDI notes in from the TRS jack (a keyboard): they play chords as the panel's keys do. The tick (an interrupt) puts
+ * them in this ring, the main loop (input) plays them. Only the jack: USB's notes could be Blop's own coming back
+ * from the computer. Any channel. Byte = note (bit 7: on), 0xFF = all notes off. */
+#define MN_N 32u
+static volatile uint8_t mn_q[MN_N];
+static volatile uint32_t mn_w, mn_r;
+static void mn_push(uint8_t b) { if (mn_w - mn_r < MN_N) { mn_q[mn_w % MN_N] = b; mn_w++; } }
+/* the jack's controllers (CC): the tick rings them (cc << 8 | value), the main loop sets the settings (midi_ccs) */
+#define MC_N 64u
+static volatile uint16_t mc_q[MC_N];
+static volatile uint32_t mc_w, mc_r;
+static void mc_push(uint32_t cc, uint32_t v)
+{
+    if (mc_w - mc_r < MC_N) { mc_q[mc_w % MC_N] = (uint16_t)(cc << 8 | v); mc_w++; }
+}
+
 void app_tick(void)
 {
     uint32_t pkt, now;
     int port;
     while (plat_midi_in(&pkt, &port)) {
-        uint32_t st = pkt >> 8 & 0xFFu;
-        if (port != PORT_USB) continue;
+        uint32_t st = pkt >> 8 & 0xFFu, d1 = pkt >> 16 & 0x7Fu, d2 = pkt >> 24 & 0x7Fu;
+        if (port == PORT_TRS && st < 0xF0u && set.midich && (st & 0x0Fu) != set.midich - 1u) continue;  /* not ours */
+        if (port == PORT_TRS) {
+            if ((st & 0xF0u) == 0x90u && d2) { mn_push((uint8_t)(0x80u | d1)); continue; }
+            if ((st & 0xF0u) == 0x80u || (st & 0xF0u) == 0x90u) { mn_push((uint8_t)d1); continue; }
+            if ((st & 0xF0u) == 0xB0u && (d1 == 123u || d1 == 120u)) { mn_push(0xFFu); continue; }
+            if ((st & 0xF0u) == 0xB0u) { mc_push(d1, d2); continue; }
+        }
+        if (port != PORT_USB && port != PORT_TRS) continue;   /* the clock: from USB or the jack */
         now = plat_ms();
         switch (st) {
         case 0xF8:
@@ -330,6 +421,7 @@ static void clock_follow(uint32_t now)
         app_say("MIDI SYNC", "OFF");
     }
 }
+static void send_mix(void) { eng_mix((float)set.synth * 0.01f, (float)set.master * 0.01f); }
 static void send_fx(void)
 {
     eng_fx((float)set.reverb * 0.01f, (float)set.delay * 0.01f, (float)set.trem * 0.01f, (float)set.chorus * 0.01f);
@@ -340,6 +432,7 @@ static void send_groove(void)
                (float)set.strum * 0.01f);
 }
 static float drum_v(char c) { return c == 'X' ? 1.0f : (c == 'x' || c == 'o') ? 0.6f : 0.0f; }
+static float drum_row(const char *row, int i) { return row ? drum_v(row[i]) : 0.0f; }   /* (no row: that voice rests) */
 static void send_drums(void)
 {
     drums_t d;
@@ -349,12 +442,18 @@ static void send_drums(void)
         d.h[i] = drum_v(DRUM_DEF[set.dpat].h[i]);
         d.r[i] = drum_v(DRUM_DEF[set.dpat].r[i]);
         d.open[i] = DRUM_DEF[set.dpat].h[i] == 'o';
+        d.s[i] = drum_row(DRUM_DEF[set.dpat].s, i);
+        d.c[i] = drum_row(DRUM_DEF[set.dpat].c, i);
+        d.t[i] = drum_row(DRUM_DEF[set.dpat].t, i);
+        d.b[i] = drum_row(DRUM_DEF[set.dpat].b, i);
     }
     d.kit = DRUM_KIT[set.dpat];
     {   /* the main page's DRUMS is the kit's master level */
         float m = (float)set.drums * 0.01f;
         m = m * (1.6f - 0.6f * m);
         eng_drums(&d, (float)set.dkick * 0.01f * m, (float)set.dhat * 0.01f * m, (float)set.drim * 0.01f * m);
+        eng_drums2((float)set.dsn * 0.01f * m, (float)set.dcl * 0.01f * m, (float)set.dtm * 0.01f * m,
+                   (float)set.dbl * 0.01f * m);
     }
 }
 static void send_bass(void) { eng_bass(set.bsound, set.bmotif, (float)set.blevel * 0.01f, (float)set.bcut * 0.01f); }
@@ -374,56 +473,135 @@ static float vis_pitch(int i, uint32_t now)
     return vis[i].from + (vis[i].to - vis[i].from) * k;
 }
 
-static void play(int idx)
+/* a key's chord: its voicing (4 notes) and bass, in the octave key_shift says */
+static void chord_of(int idx, chord_t *c, float *notes, float *bass)
 {
-    chord_t c = build_chord(idx);
-    float notes[4], bass, g = active ? glide_s() : 0.0f;
+    *c = build_chord(idx);
+    voice_chord(c, notes);
+    spread(notes, set.voicing);
+    *bass = (float)(36 + (c->root + c->bass_off) % 12 + clamp(c->shift, -12, 12));
+}
+
+/* the screen's side of a chord: its name, the voices the creature follows, the key lit */
+static void show_chord(int idx, const chord_t *c, const float *notes, float bass, float g)
+{
     uint32_t now = plat_ms();
     int i;
-    voice_chord(&c, notes);
-    spread(notes, set.voicing);
-    bass = (float)(36 + (c.root + c.bass_off) % 12 + clamp(c.shift, -12, 12));
-    chord_name(&c, chord_txt);
+    chord_name(c, chord_txt);
     for (i = 0; i < 4; i++) {
         vis[i].from = vis_pitch(i, now); vis[i].to = notes[i]; vis[i].t0 = now; vis[i].dur = (uint32_t)(g * 1000.0f);
     }
     vis[4].from = vis_pitch(4, now); vis[4].to = bass; vis[4].t0 = now; vis[4].dur = (uint32_t)(g * 1000.0f);
     cur_idx = idx;
     active = 1;
+}
+
+static void play(int idx)
+{
+    chord_t c;
+    float notes[4], bass, g = active ? glide_s() : 0.0f;
+    chord_of(idx, &c, notes, &bass);
+    show_chord(idx, &c, notes, bass, g);
     eng_chord(notes, bass, glide_s());
 }
 
-static void stop(void)
+/* ------------------------------------------------------------------ the looper --- */
+/* REC, then chords (the FM-1's keys or MIDI), then REC or PLAY: they loop, each for LENGTH (SEQ page), in time with
+ * the rhythm, the drums and an outside clock (the engine changes them on its steps). PLAY plays / stops. A key played
+ * while it loops takes over (the loop stops). Kept until the next REC (not across a restart). */
+#define SEQ_MAX 16
+static struct { uint8_t n; uint8_t key[SEQ_MAX]; int8_t shift[SEQ_MAX]; } seq;
+static uint8_t seq_rec, seq_play, seq_len = 2;          /* seq_len: SEQ page LENGTH (SEQ_STEPS) */
+#define NSEQ_LEN 5
+static const uint8_t SEQ_STEPS[NSEQ_LEN] = {4, 8, 16, 32, 64};
+static const char *const SEQ_LEN_NAME[NSEQ_LEN] = {"1 BEAT", "2 BEATS", "1 BAR", "2 BARS", "4 BARS"};
+static int seq_shown = -1;                              /* the chord the screen shows */
+/* SEQ page K2 TRANSPOSE (seq_trk: 0..24, 12 = as recorded: the whole loop up or down in semitones) and K3 ORDER */
+static uint8_t seq_trk = 12, seq_ord;
+enum { ORD_FWD, ORD_BACK, ORD_PING, ORD_RAND, NORD };
+static const char *const ORD_NAME[NORD] = {"FORWARD", "BACKWARD", "PING-PONG", "RANDOM"};
+static uint8_t seq_map[2 * SEQ_MAX];                    /* the order sent: step -> recorded chord */
+static int resume_idx = -1, resume_shift;               /* PLAY without a loop: the chord it stopped */
+
+static void stop(void)                                  /* (the loop too: the engine's stop ends it) */
 {
     active = 0;
     cur_idx = -1;
+    seq_play = 0;
     eng_stop();
 }
 
-static void rechord(void) { if (active && cur_idx >= 0) play(cur_idx); }
+/* a recorded chord as the loop plays it: its octave, then TRANSPOSE (the notes, the bass and the name's root) */
+static void seq_chord(int i, chord_t *c, float *notes, float *bass)
+{
+    int k, tr = (int)seq_trk - 12;
+    key_shift = seq.shift[i];
+    chord_of(seq.key[i], c, notes, bass);
+    for (k = 0; k < 4; k++) notes[k] += (float)tr;
+    *bass += (float)tr;
+    c->root = (c->root + tr + 24) % 12;
+}
+
+static void seq_send(void)
+{
+    float n[2 * SEQ_MAX][4], b[2 * SEQ_MAX];
+    chord_t c;
+    int i, m = 0, ks = key_shift;
+    if (seq_ord == ORD_BACK) for (i = seq.n - 1; i >= 0; i--) seq_map[m++] = (uint8_t)i;
+    else {
+        for (i = 0; i < seq.n; i++) seq_map[m++] = (uint8_t)i;
+        if (seq_ord == ORD_PING) for (i = seq.n - 2; i >= 1; i--) seq_map[m++] = (uint8_t)i;   /* and back */
+    }
+    for (i = 0; i < m; i++) seq_chord(seq_map[i], &c, n[i], &b[i]);
+    key_shift = ks;
+    seq_shown = -1;
+    eng_prog(n, b, m, SEQ_STEPS[seq_len], seq_ord == ORD_RAND);
+}
+
+static void int_text(int32_t v, char *b);
+static void seq_add(int idx)
+{
+    char t[16];
+    if (!seq_rec || seq.n >= SEQ_MAX) return;
+    seq.key[seq.n] = (uint8_t)idx; seq.shift[seq.n] = (int8_t)key_shift; seq.n++;
+    int_text(seq.n, t); text_cat(t, seq.n == 1 ? " CHORD" : " CHORDS");
+    app_say("REC", t);
+}
+
+static void seq_live(void) { if (seq_play) { seq_play = 0; eng_prog_run(0); } }   /* a key takes over */
+
+static void rechord(void)
+{
+    if (seq_play) seq_send();
+    else if (active && cur_idx >= 0) play(cur_idx);
+}
 
 /* ------------------------------------------------------------------ pages --- */
-enum { PG_MAIN, PG_FX, PG_ACC, PG_GROOVE, PG_BASS, PG_DECOR, PG_DRUMS, NPAGE };
-static const char *const PAGE_NAME[NPAGE] = {"MAIN", "FX", "CHORDS", "GROOVE", "BASS", "DECOR", "DRUMS"};
-static const uint8_t PAGE_BTN[NPAGE] = {0xFF, B_FX, B_SEL, B_ENV, B_LFO, B_EDIT, B_GLO};
+enum { PG_MAIN, PG_FX, PG_ACC, PG_GROOVE, PG_BASS, PG_DECOR, PG_DRUMS, PG_SEQ, PG_MIX, PG_DRUMS2, PG_GROOVE2, NPAGE };
+static const char *const PAGE_NAME[NPAGE] = {"MAIN", "FX", "CHORDS", "GROOVE", "BASS", "DECOR", "DRUMS", "SEQ", "MIXER",
+                                             "DRUMS 2", "GROOVE 2"};
+static const uint8_t PAGE_BTN[NPAGE] = {0xFF, B_FX, B_SEL, B_ENV, B_LFO, B_EDIT, B_GLO, B_SEQ, B_ARP, B_GLO, B_ENV};
 static const uint8_t PAGE_RGB[NPAGE][3] = {{255, 150, 220}, {190, 150, 255}, {120, 230, 255}, {255, 214, 110},
-                                          {140, 240, 150}, {235, 235, 240}, {255, 140, 100}};
+                                          {140, 240, 150}, {235, 235, 240}, {255, 140, 100}, {200, 255, 120},
+                                          {255, 190, 120}, {255, 170, 110}, {255, 214, 110}};
 
-enum { KD_PCT, KD_OFF, KD_GLIDE, KD_BPM, KD_BIP, KD_LIST };
-enum { G_NONE, G_PARAMS, G_FX, G_GROOVE, G_DRUMS, G_BASS, G_CHORD, G_DRUMLVL };
+enum { KD_PCT, KD_OFF, KD_GLIDE, KD_BPM, KD_BIP, KD_LIST, KD_JUNO, KD_TR, KD_SOUND };
+enum { G_NONE, G_PARAMS, G_FX, G_GROOVE, G_DRUMS, G_BASS, G_CHORD, G_DRUMLVL, G_SEQ, G_MIX, G_SOUND };
 typedef struct {
     const char *lab;
     uint8_t *v;
     uint8_t lo, hi, kind, grp;
     const char *const *names;
 } kdef_t;
+static uint8_t spare_knob;                       /* GROOVE 2's free slots: they show a dash and do nothing */
+static const char *const SPARE_NAME[] = {"-"};
 static const kdef_t KD[NPAGE][4] = {
-    {{"CUTOFF", &set.cutoff, 0, 100, KD_PCT, G_PARAMS, 0}, {"GLIDE", &set.glide, 0, 100, KD_GLIDE, G_NONE, 0},
-     {"LENGTH", &set.gate, 0, 100, KD_PCT, G_GROOVE, 0}, {"DRUMS", &set.drums, 0, 100, KD_OFF, G_DRUMLVL, 0}},
-    {{"DELAY", &set.delay, 0, 100, KD_OFF, G_FX, 0}, {"TREMOLO", &set.trem, 0, 100, KD_OFF, G_FX, 0},
-     {"CHORUS", &set.chorus, 0, 100, KD_OFF, G_FX, 0}, {"REVERB", &set.reverb, 0, 100, KD_PCT, G_FX, 0}},
+    {{"SOUND", &set.sound, 0, NSOUND - 1, KD_SOUND, G_SOUND, 0}, {"CUTOFF", &set.cutoff, 0, 100, KD_PCT, G_PARAMS, 0},
+     {"GLIDE", &set.glide, 0, 100, KD_GLIDE, G_NONE, 0}, {"LENGTH", &set.gate, 0, 100, KD_PCT, G_GROOVE, 0}},
+    {{"TAPE ECHO", &set.delay, 0, 100, KD_OFF, G_FX, 0}, {"PHASER", &set.trem, 0, 100, KD_OFF, G_FX, 0},
+     {"JUNO", &set.chorus, 0, 100, KD_JUNO, G_FX, 0}, {"CLOUD", &set.reverb, 0, 100, KD_PCT, G_FX, 0}},
     {{"KEY", &set.key, 0, 11, KD_LIST, G_CHORD, NOTE}, {"VOICING", &set.voicing, 0, 2, KD_LIST, G_CHORD, VOICING_NAME},
-     {"RICHNESS", &set.rich, 0, 3, KD_LIST, G_CHORD, RICH_NAME}, {"STRUM", &set.strum, 0, 100, KD_OFF, G_GROOVE, 0}},
+     {"RICHNESS", &set.rich, 0, 3, KD_LIST, G_CHORD, RICH_NAME}, {"SCALE", &set.root, 0, NSCALE - 1, KD_LIST, G_CHORD, SCALE_NAME}},
     {{"BPM", &set.bpm, 70, 160, KD_BPM, G_PARAMS, 0}, {"SWING", &set.swing, 0, 100, KD_OFF, G_GROOVE, 0},
      {"DENSITY", &set.dens, 0, 100, KD_BIP, G_GROOVE, 0}, {"SIDECHAIN", &set.side, 0, 1, KD_LIST, G_PARAMS, ONOFF_NAME}},
     {{"SOUND", &set.bsound, 0, NBASS_SOUND - 1, KD_LIST, G_BASS, BASS_NAME}, {"LEVEL", &set.blevel, 0, 100, KD_PCT, G_BASS, 0},
@@ -433,14 +611,22 @@ static const kdef_t KD[NPAGE][4] = {
      {"BACKDROP", &set.decor, 0, NDECOR - 1, KD_LIST, G_NONE, DECOR_NAME},
      {"EXTRA", &set.acc, 0, NACC - 1, KD_LIST, G_NONE, ACC_NAME}},
     {{"PATTERN", &set.dpat, 0, NDRUM - 1, KD_LIST, G_DRUMS, DRUM_NAME}, {"KICK", &set.dkick, 0, 100, KD_OFF, G_DRUMS, 0},
-     {"HI-HAT", &set.dhat, 0, 100, KD_OFF, G_DRUMS, 0}, {"RIM", &set.drim, 0, 100, KD_OFF, G_DRUMS, 0}},
+     {"SNARE", &set.dsn, 0, 100, KD_OFF, G_DRUMS, 0}, {"HI-HAT", &set.dhat, 0, 100, KD_OFF, G_DRUMS, 0}},
+    {{"LENGTH", &seq_len, 0, NSEQ_LEN - 1, KD_LIST, G_SEQ, SEQ_LEN_NAME}, {"TRANSPOSE", &seq_trk, 0, 24, KD_TR, G_SEQ, 0},
+     {"ORDER", &seq_ord, 0, NORD - 1, KD_LIST, G_SEQ, ORD_NAME}, {"SOUND", &set.sound, 0, NSOUND - 1, KD_SOUND, G_SOUND, 0}},
+    {{"SYNTH", &set.synth, 0, 100, KD_OFF, G_MIX, 0}, {"BASS", &set.blevel, 0, 100, KD_PCT, G_BASS, 0},
+     {"DRUMS", &set.drums, 0, 100, KD_OFF, G_DRUMLVL, 0}, {"MASTER", &set.master, 0, 100, KD_PCT, G_MIX, 0}},
+    {{"RIM", &set.drim, 0, 100, KD_OFF, G_DRUMS, 0}, {"CLAP", &set.dcl, 0, 100, KD_OFF, G_DRUMS, 0},
+     {"TOM", &set.dtm, 0, 100, KD_OFF, G_DRUMS, 0}, {"COWBELL", &set.dbl, 0, 100, KD_OFF, G_DRUMS, 0}},
+    {{"STRUM", &set.strum, 0, 100, KD_OFF, G_GROOVE, 0}, {"-", &spare_knob, 0, 0, KD_LIST, G_NONE, SPARE_NAME},
+     {"-", &spare_knob, 0, 0, KD_LIST, G_NONE, SPARE_NAME}, {"-", &spare_knob, 0, 0, KD_LIST, G_NONE, SPARE_NAME}},
 };
 
 static int settings_ok(void)
 {
     int p, k;
-    if (set.magic != SET_MAGIC || set.grid >= NGRID || set.octave < -2 || set.octave > 2 || set.sound >= NFAMILY * PER_FAMILY
-        || set.rhythm >= NRHYTHM || set.page >= NPAGE)
+    if (set.magic != SET_MAGIC || set.grid >= NGRID || set.octave < -2 || set.octave > 2 || set.sound >= NSOUND
+        || set.rhythm >= NRHYTHM || set.page >= NPAGE || set.root >= NSCALE || set.midimap >= NMAP || set.midich > 16)
         return 0;
     for (p = 0; p < NPAGE; p++)
         for (k = 0; k < 4; k++)
@@ -449,6 +635,7 @@ static int settings_ok(void)
 }
 
 /* ------------------------------------------------------------------ platform contract --- */
+static void slots_load(void);           /* (the memories, below) */
 void app_init(void)
 {
     int g;
@@ -456,8 +643,14 @@ void app_init(void)
         parse_chords(GRID_DEF[g].white, grid_w[g], 8);
         parse_chords(GRID_DEF[g].black, grid_b[g], 5);
     }
-    if (plat_store_load(OBJ_SETTINGS, &set, sizeof set) != (int)sizeof set || !settings_ok())
-        settings_defaults();
+    slots_load();
+    {   /* the settings; saved before the mixer (shorter): theirs, the mixer at full */
+        int n = plat_store_load(OBJ_SETTINGS, &set, sizeof set);
+        if (n == (int)SET_V1_SIZE) { set.synth = 100; set.master = 100; drums2_defaults(&set); }
+        else if (n == (int)SET_V2_SIZE) drums2_defaults(&set);
+        else if (n != (int)sizeof set) set.magic = 0;
+        if (!settings_ok()) settings_defaults();
+    }
     eng_init();
     send_sound();
     send_rhythm();
@@ -485,7 +678,24 @@ static struct {
     uint32_t reset_at;                   /* HOME + REC held since (0: not) */
     uint8_t reset_shown, reset_done;
     uint8_t bowl, dark, clean;           /* fun: the bowl view, the light off, no info on the screen */
+    /* the songs' banner: a big word in a coloured box mid-screen (SAVED, LOADED ...), a line under it, the song's
+     * key blinking, until ban_until */
+    char ban[2][24];
+    uint32_t ban_until;
+    uint16_t ban_col;
+    int8_t ban_key;
 } ui;
+
+static void banner(const char *big, const char *line, uint16_t col, int key, uint32_t ms)
+{
+    uint32_t i;
+    for (i = 0; i < 23u && big[i]; i++) ui.ban[0][i] = big[i];
+    ui.ban[0][i] = 0;
+    for (i = 0; i < 23u && line[i]; i++) ui.ban[1][i] = line[i];
+    ui.ban[1][i] = 0;
+    ui.ban_col = col; ui.ban_key = (int8_t)key;
+    ui.ban_until = plat_ms() + ms;
+}
 static void fun(int k);                  /* the bottom row (screen part) */
 
 static void int_text(int32_t v, char *b)
@@ -548,6 +758,17 @@ static float knob_text(const kdef_t *d, char *b)
         if (v == 50) { b[0] = 0; text_cat(b, "0"); }
         else { if (v > 50) { b[0] = '+'; b[1] = 0; } else b[0] = 0; int_text((v - 50) * 2, b + (v > 50)); text_cat(b, "%"); }
         break;
+    case KD_SOUND: b[0] = 0; text_cat(b, snd_name(v)); break;
+    case KD_TR:                           /* TRANSPOSE: semitones, signed (0 = as recorded) */
+        if (v == 12) { b[0] = 0; text_cat(b, "0"); break; }
+        if (v > 12) { b[0] = '+'; int_text(v - 12, b + 1); } else int_text(v - 12, b);
+        text_cat(b, " ST");
+        break;
+    case KD_JUNO:                         /* the Juno chorus: its mode (engine: I up to 40, II up to 80, I+II), then % */
+        if (v == 0) { b[0] = 0; text_cat(b, "OFF"); break; }
+        b[0] = 0; text_cat(b, v > 80 ? "I+II " : v > 40 ? "II " : "I ");
+        int_text(v, b + (v > 80 ? 5 : v > 40 ? 3 : 2)); text_cat(b, "%");
+        break;
     case KD_OFF:
         if (v == 0) { b[0] = 0; text_cat(b, "OFF"); break; }
         /* fall through */
@@ -566,8 +787,11 @@ static void apply_group(int g)
     case G_DRUMS: send_drums(); break;
     case G_BASS: send_bass(); break;
     case G_CHORD: rechord(); break;
+    case G_SEQ: if (seq_play) seq_send(); break;
+    case G_MIX: send_mix(); break;
+    case G_SOUND: send_sound(); break;
     case G_DRUMLVL:
-        if ((*KD[PG_MAIN][3].v > 0) != (prev_drums > 0)) send_params();
+        if ((set.drums > 0) != (prev_drums > 0)) send_params();
         send_drums();
         break;
     default: break;
@@ -578,12 +802,17 @@ static void knob(int k, int32_t e)
 {
     const kdef_t *d = &KD[set.page][k];
     prev_drums = set.drums;
-    int32_t step = d->kind == KD_LIST ? e : d->kind == KD_BPM ? accel(EN_K1 + k, e) : accel(EN_K1 + k, e) * 3;
+    /* a bipolar knob (DENSITY): steps of 2, so its centre (50, shown as 0) stays on the knob's steps, and the centre
+     * is a detent: turning through it stops there. (Steps of 3 could never land on 50 once off it.) */
+    int32_t step = d->kind == KD_LIST || d->kind == KD_TR || d->kind == KD_SOUND ? e : d->kind == KD_BPM ? accel(EN_K1 + k, e)
+                 : d->kind == KD_BIP ? accel(EN_K1 + k, e) * 2 : accel(EN_K1 + k, e) * 3;
     int32_t n = clamp((int32_t)*d->v + step, d->lo, d->hi);
+    if (d->kind == KD_BIP && ((*d->v < 50 && n > 50) || (*d->v > 50 && n < 50))) n = 50;   /* the centre is a detent */
     if (n == *d->v) return;
     *d->v = (uint8_t)n;
     apply_group(d->grp);
     dirty();
+    if (d->kind == KD_BIP && n == 50) app_say(d->lab, "CENTRED");
 }
 
 static void encoder(int k, int32_t e)
@@ -600,8 +829,8 @@ static void encoder(int k, int32_t e)
         if (!set.rhythm && held_idx < 0 && active) stop();   /* no rhythm, no latch */
         break;
     case EN_PRESET:
-        wrap_u8(&set.sound, e, NFAMILY * PER_FAMILY);
-        app_say(FAMILY_NAME[set.sound / PER_FAMILY], SOUND_NAME[set.sound]);
+        wrap_u8(&set.sound, e, NSOUND);
+        app_say(fam_name(set.sound / PER_FAMILY), snd_name(set.sound));
         send_sound();
         break;
     case EN_K1: case EN_K2: case EN_K3: case EN_K4: knob(k - EN_K1, e); return;
@@ -610,10 +839,87 @@ static void encoder(int k, int32_t e)
     dirty();
 }
 
+/* HOME + SCL: SCALE between GRID and the last scale used (MAJOR at first) */
+static void root_toggle(void)
+{
+    static uint8_t last = 1;
+    if (set.root) { last = set.root; set.root = 0; }
+    else set.root = last;
+    app_say("SCALE", SCALE_NAME[set.root]);
+    rechord();
+    dirty();
+}
+
+static uint32_t btn_now;                  /* the buttons held this pass (input), for presses in the same one */
+static uint8_t combo_page;                /* the page before FX or SCL was pressed, for the FX + SCL combo */
+
 static void button(int k)
 {
     char t[8];
     int p;
+    {   /* hold FX + SCL: the creature's tricks come back on ARP (lamp), SEQ (pirouette), PLAY (picture only), REC (food) */
+        uint32_t held = ui.btn | btn_now;
+        int both = ((held >> B_FX) & 1u) && ((held >> B_SEL) & 1u);
+        if (k == B_FX || k == B_SEL) {
+            if (both) {                       /* the second one pressed: back to the page before, a hint */
+                set.page = combo_page;
+                app_say("CREATURE", "ARP SEQ PLAY REC");
+                ui.home_long = 1;
+                return;
+            }
+            combo_page = set.page;            /* (the page before this first press) */
+        } else if (both && (k == B_ARP || k == B_SEQ || k == B_PLAY || k == B_REC)) {
+            fun(k);                           /* the original tricks, on their own buttons */
+            return;
+        }
+    }
+    if ((ui.btn >> B_HOME) & 1u && (k == B_SEQ || k == B_PLAY || k == B_ARP || k == B_SAVE)) {   /* the tricks */
+        ui.home_long = 1;
+        if (k == B_SAVE) { save_used = 1; fun(B_ARP); }   /* HOME + SAVE the lamp (not the bowl) */
+        else fun(k == B_ARP ? B_REC : k);         /* HOME + SEQ a pirouette, + PLAY the picture only, + ARP food */
+        return;
+    }
+    if ((ui.btn >> B_HOME) & 1u && k == B_OCTUP) {   /* HOME + OCT+: the audio load, its peak since, the dropouts */
+        char a[16];
+        ui.home_long = 1;
+        a[0] = 0; text_cat(a, "CPU "); int_text((int32_t)plat_cpu_pct(), a + 4); text_cat(a, "%");
+        t[0] = 0; int_text((int32_t)cpu_peak, t); text_cat(t, "%");
+        {
+            char b[24];
+            char x[12];
+            int_text((int32_t)plat_xruns(), x);
+            b[0] = 0; text_cat(b, "PEAK "); text_cat(b, t); text_cat(b, " XRUNS "); text_cat(b, x);
+            app_say(a, b);
+        }
+        cpu_peak = 0;
+        return;
+    }
+    if ((ui.btn >> B_HOME) & 1u && k == B_GLO) {   /* HOME + GLO: the drums' second page, and back to the first */
+        ui.home_long = 1;
+        set.page = set.page == PG_DRUMS2 ? PG_DRUMS : PG_DRUMS2;
+        dirty();
+        return;
+    }
+    if ((ui.btn >> B_HOME) & 1u && (k == B_SEL || k == B_LFO || k == B_ENV || k == B_EDIT)) {
+        ui.home_long = 1;                             /* (HOME's release then does nothing) */
+        if (k == B_SEL) root_toggle();                /* HOME + SCL: the scale on / off (the grid) */
+        else if (k == B_LFO) {                        /* HOME + LFO: the next MIDI MAP */
+            set.midimap = (uint8_t)((set.midimap + 1u) % NMAP);
+            app_say("MIDI MAP", MAP_NAME[set.midimap]);
+            dirty();
+        } else if (k == B_ENV) {                      /* HOME + ENV: GROOVE's second page (LENGTH), and back */
+            set.page = set.page == PG_GROOVE2 ? PG_GROOVE : PG_GROOVE2;
+            dirty();
+        } else {                                      /* HOME + EDIT: the next MIDI channel (ALL, 1..16) */
+            char t[4];
+            set.midich = (uint8_t)((set.midich + 1u) % 17u);
+            if (set.midich) { int_text(set.midich, t); app_say("MIDI CHANNEL", t); }
+            else app_say("MIDI CHANNEL", "ALL");
+            dirty();
+        }
+        return;
+    }
+    if (k == B_ENV && set.page == PG_GROOVE2) { set.page = PG_MAIN; dirty(); return; }
     for (p = 1; p < NPAGE; p++)
         if (PAGE_BTN[p] == k) {          /* a page; the same button again: back to the main page */
             set.page = (uint8_t)(set.page == p ? PG_MAIN : p);
@@ -622,15 +928,38 @@ static void button(int k)
         }
     switch (k) {
     case B_HOME: ui.home_at = plat_ms(); ui.home_long = 0; return;    /* acts on release (held = help) */
-    case B_SAVE:
-        ui.bowl ^= 1u;
-        eng_muffle(ui.bowl ? 1.0f : 0.0f);
-        return;
+    case B_SAVE: return;                  /* acts on release (the bowl), unless a memory was used meanwhile (input) */
     case B_REC:
-        if ((ui.btn >> B_HOME) & 1u) return;      /* HOME + REC: the reset (input), not food */
-        fun(k);
+        if ((ui.btn >> B_HOME) & 1u) return;      /* HOME + REC: the reset (input) */
+        if (seq_rec) {                            /* REC again: the loop is recorded */
+            seq_rec = 0;
+            int_text(seq.n, t); app_say("RECORDED", seq.n ? t : "NOTHING");
+        } else {                                  /* REC: a new loop, from the chords played next */
+            seq_live();
+            seq_rec = 1; seq.n = 0;
+            app_say("REC", "PLAY YOUR CHORDS");
+        }
         return;
-    case B_ARP: case B_SEQ: case B_PLAY: fun(k); return;
+    case B_PLAY:
+        if (seq_rec) seq_rec = 0;                 /* PLAY while recording: done, and play it */
+        if (seq.n) {
+            if (seq_play) { seq_play = 0; held_idx = -1; stop(); app_say("LOOP", "STOP"); }
+            else {
+                seq_send(); seq_play = 1; seq_shown = -1; held_idx = -1;
+                eng_prog_run(1);
+                int_text(seq.n, t); app_say("LOOP", t);
+            }
+        } else if (active) {                      /* no loop: PLAY stops what plays, and brings it back */
+            resume_idx = cur_idx; resume_shift = key_shift; held_idx = -1;
+            stop();
+            app_say("STOP", "");
+        } else if (resume_idx >= 0) {
+            key_shift = resume_shift;
+            play(resume_idx);
+            app_say("PLAY", chord_txt);
+        }
+        return;
+    case B_ARP: fun(k); return;
     case B_OCTDN:
     case B_OCTUP:
         set.octave = (int8_t)clamp(set.octave + (k == B_OCTUP ? 1 : -1), -2, 2);
@@ -643,24 +972,349 @@ static void button(int k)
     dirty();
 }
 
+/* a MIDI note (C4 = 60) as a key index: key 0 is F3 (53); outside F3..G5 it folds in by octaves. *shift: where the
+ * chord plays. A keyboard's three middle octaves (C3..C6, a 37-key keyboard as it comes) sound where the FM-1's keys
+ * do; an octave beyond them plays an octave lower or higher */
+static int note_key(int note, int *shift)
+{
+    int idx = note - (60 - KEY_C4);
+    while (idx < 0) idx += 12;
+    while (idx >= NKEYS) idx -= 12;
+    if (note < 48) *shift = -12 * ((48 - note + 11) / 12);
+    else if (note > 84) *shift = 12 * ((note - 84 + 11) / 12);
+    else *shift = 0;
+    *shift += BLOP_MIDI_OCTAVE * 12;
+    return idx;
+}
+static int mn_note = -1;                 /* the MIDI note holding the chord */
+
+/* the jack's notes, played as key presses and releases (the same latch with a rhythm) */
+/* notes that come together (a keyboard's chord mode: C, Eb, G within a few ms) count as one, the lowest: a note-on
+ * waits MN_WAIT ms for the others before it plays */
+#define MN_WAIT 8u
+static int mn_pend = -1;
+static uint32_t mn_pend_t;
+static void mn_play_pending(void)
+{
+    int note = mn_pend, idx, sh;
+    mn_pend = -1;
+    idx = note_key(note, &sh);
+    if (set.rhythm && active && held_idx < 0 && mn_note == note && cur_idx == idx) stop();
+    else { seq_live(); key_shift = sh; held_idx = idx; mn_note = note; play(idx); seq_add(idx); }
+}
+static void midi_notes(uint32_t now)
+{
+    int idx, sh;
+    while (mn_r != mn_w) {
+        uint8_t b = mn_q[mn_r % MN_N];
+        int note = b & 0x7F;
+        mn_r++;
+        if (b == 0xFFu) { held_idx = -1; mn_note = -1; mn_pend = -1; if (active) stop(); continue; }
+        if (b & 0x80u) {
+            if (mn_pend < 0) { mn_pend = note; mn_pend_t = now; }
+            else if (note < mn_pend) mn_pend = note;
+            continue;
+        }
+        if (mn_pend >= 0) mn_play_pending();      /* a short press: its note plays before its release */
+        idx = note_key(note, &sh);
+        if (held_idx == idx && mn_note == note) {
+            held_idx = -1;
+            if (!set.rhythm) stop();
+        }
+    }
+    if (mn_pend >= 0 && now - mn_pend_t >= MN_WAIT) mn_play_pending();
+}
+
+/* the jack's controllers. Each setting has its own CC (page by page, four in a row); CC 16-19 are K1-K4 of the page on
+ * the screen, so a controller with four knobs reaches everything; CC 15 picks the page. A knob's 0..127 spans the
+ * setting's whole range. Any channel. */
+enum { CC_HERE = 0xF0, CC_PAGE, CC_GRID, CC_RHYTHM, CC_SOUND, CC_OCTAVE, CC_STRUM };
+/* MIDI MAP (HOME + LFO): STANDARD, the chart below; KEYSTEP 37, the chart and a KeyStep 37's knobs as it comes
+ * (they send 74 71 76 77, the strip 1: numbers other gear uses for resonance and the mod wheel, so only on demand);
+ * OFF, notes only. A preset for another controller: a name in MAP_NAME and its lines marked with it */
+#define KS 0x80u                          /* a line of the KEYSTEP 37 preset only */
+static const uint8_t CC_MAP[][3] = {      /* cc, page (or CC_*), knob (| KS) */
+    {12, PG_MIX, 2},                                                                  /* drums level (left MAIN) */
+    {20, PG_MAIN, 1}, {21, PG_MAIN, 2}, {22, PG_MAIN, 3}, {23, PG_GROOVE2, 0},        /* cutoff glide length strum */
+    {24, PG_FX, 0}, {25, PG_FX, 1}, {26, PG_FX, 2}, {27, PG_FX, 3},                   /* delay tremolo chorus reverb */
+    {28, PG_ACC, 0}, {29, PG_ACC, 1}, {30, PG_ACC, 2}, {31, PG_ACC, 3},               /* key voicing richness strum */
+    {102, PG_GROOVE, 0}, {103, PG_GROOVE, 1}, {104, PG_GROOVE, 2}, {105, PG_GROOVE, 3},   /* bpm swing density side */
+    {106, PG_BASS, 0}, {107, PG_BASS, 1}, {108, PG_BASS, 2}, {109, PG_BASS, 3},       /* sound level riff filter */
+    {110, PG_DRUMS, 0}, {111, PG_DRUMS, 1}, {52, PG_DRUMS, 2}, {112, PG_DRUMS, 3},   /* DRUMS: pattern kick snare hi-hat */
+    {113, PG_DRUMS2, 0}, {53, PG_DRUMS2, 1}, {54, PG_DRUMS2, 2}, {55, PG_DRUMS2, 3},  /* DRUMS 2: rim clap tom cowbell */
+    {114, PG_DECOR, 0}, {115, PG_DECOR, 1}, {116, PG_DECOR, 2}, {117, PG_DECOR, 3},   /* creature eyes backdrop extra */
+    {74, PG_MAIN, 1}, {91, PG_FX, 3}, {93, PG_FX, 2},           /* the usual numbers: brightness, reverb, chorus */
+    {71, PG_DRUMS, 1 | KS}, {76, PG_DRUMS, 3 | KS}, {77, PG_DRUMS2, 0 | KS},   /* KEYSTEP 37: knobs 2-4 kick, hi-hat,
+                                                                             * rim (knob 1, 74: cutoff, as above) */
+    {1, PG_BASS, 0 | KS},                                                  /* KEYSTEP 37: the strip, the bass sound */
+    {16, CC_HERE, 0}, {17, CC_HERE, 1}, {18, CC_HERE, 2}, {19, CC_HERE, 3},
+    {15, CC_PAGE, 0}, {85, CC_GRID, 0}, {86, CC_RHYTHM, 0}, {87, CC_SOUND, 0}, {90, CC_OCTAVE, 0}, {7, PG_MIX, 3}, {119, PG_MIX, 0}, {89, PG_ACC, 3}, {118, CC_STRUM, 0},
+};
+static int cc_step(int v, int n) { return v * n / 128; }   /* 0..127 -> 0..n-1, even steps */
+
+static void cc_param(int p, int k, int v)
+{
+    const kdef_t *d = &KD[p][k];
+    char b[16];
+    int n = d->lo + cc_step(v, d->hi - d->lo + 1);
+    if (n == *d->v) return;
+    prev_drums = set.drums;
+    *d->v = (uint8_t)n;
+    apply_group(d->grp);
+    if (((p == PG_DRUMS && k > 0) || p == PG_DRUMS2) && !set.drums && n > 0) {   /* a drum turned up while the drums are off: on */
+        set.drums = 70;
+        apply_group(G_DRUMLVL);
+    }
+    dirty();
+    if (p != set.page) { knob_text(d, b); app_say(d->lab, b); }   /* another page's: said on the screen */
+}
+
+static void cc_set(int cc, int v)
+{
+    unsigned i;
+    int n;
+    char t[4];
+    if (set.midimap == MAP_OFF) return;
+    for (i = 0; i < sizeof CC_MAP / sizeof CC_MAP[0]; i++) {
+        int k = CC_MAP[i][2] & 3;
+        if (CC_MAP[i][0] != cc || ((CC_MAP[i][2] & KS) && set.midimap != MAP_KEYSTEP)) continue;
+        switch (CC_MAP[i][1]) {
+        case CC_HERE: cc_param(set.page, k, v); break;
+        case CC_PAGE:
+            if ((n = cc_step(v, PG_GROOVE2)) != set.page) { set.page = (uint8_t)n; dirty(); }
+            break;
+        case CC_GRID:
+            if ((n = cc_step(v, NGRID)) == set.grid) break;
+            set.grid = (uint8_t)n; set.rich = GRID_DEF[n].rich; app_say("GRID", GRID_DEF[n].name);
+            rechord(); dirty();
+            break;
+        case CC_RHYTHM:
+            if ((n = cc_step(v, NRHYTHM)) == set.rhythm) break;
+            set.rhythm = (uint8_t)n; app_say("RHYTHM", n ? RHYTHM_NAME[n] : "OFF");
+            send_rhythm();
+            if (!set.rhythm && held_idx < 0 && active) stop();
+            dirty();
+            break;
+        case CC_SOUND:
+            if ((n = cc_step(v, NSOUND)) == set.sound) break;
+            set.sound = (uint8_t)n; app_say(fam_name(n / PER_FAMILY), snd_name(n));
+            send_sound(); dirty();
+            break;
+        case CC_OCTAVE:
+            if ((n = cc_step(v, 5) - 2) == set.octave) break;
+            set.octave = (int8_t)n;
+            t[0] = n < 0 ? '-' : '+'; t[1] = (char)('0' + (n < 0 ? -n : n)); t[2] = 0;
+            app_say("OCTAVE", t);
+            rechord(); dirty();
+            break;
+        case CC_STRUM: {                  /* off the CHORDS page (SCALE took its knob), still here */
+            static const kdef_t ks = {"STRUM", &set.strum, 0, 100, KD_OFF, G_GROOVE, 0};
+            char b[16];
+            if ((n = cc_step(v, 101)) == set.strum) break;
+            set.strum = (uint8_t)n; apply_group(ks.grp); dirty();
+            knob_text(&ks, b); app_say(ks.lab, b);
+            break;
+        }
+        default: cc_param(CC_MAP[i][1], k, v); break;
+        }
+    }
+}
+
+/* a knob turned sends many values: only each controller's latest is set */
+static void midi_ccs(void)
+{
+    static int16_t last[128];
+    static uint8_t order[MC_N];
+    unsigned i, n = 0;
+    while (mc_r != mc_w) {
+        uint16_t m = mc_q[mc_r % MC_N];
+        mc_r++;
+        if (m >> 8 >= 128u) continue;
+        if (!last[m >> 8]) order[n++] = (uint8_t)(m >> 8);
+        last[m >> 8] = (int16_t)(0x100 | (m & 0x7F));
+    }
+    for (i = 0; i < n; i++) {
+        cc_set(order[i], last[order[i]] & 0x7F);
+        last[order[i]] = 0;
+    }
+}
+
+/* ------------------------------------------------------------------ songs (memories) --- */
+/* 12 songs: hold SAVE, tap a white key from C4 to G5 to load that song, or hold the key 1.5 s to store the setup
+ * and its chord loop (REC / PLAY) in it. The MIDI map and channel stay as they are (the keyboard's, not the song's).
+ * Songs stored before (8 setups, no loop) are read and kept. */
+#define NSLOT 12
+#define SLOT_MAGIC 0x534C5433u            /* "SLT3": with the second drum page's levels */
+#define SLOT2_MAGIC 0x534C5432u           /* "SLT2": the loop, settings of SET_V2_SIZE (v18 to v24) */
+#define SLOT1_MAGIC 0x534C5431u           /* "SLT1": 8 settings of SET_V1_SIZE, then 8 used flags */
+#define SLOT1_SIZE (4u + 8u * SET_V1_SIZE + 8u)
+#define SONG2_SIZE (SET_V2_SIZE + 4u + 16u + 16u)   /* a "SLT2" song: settings, used n len rsv, 16 keys, 16 shifts */
+#define SLOT2_SIZE (4u + 12u * SONG2_SIZE)
+static const uint8_t SLOT_KEY[NSLOT] = {7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24, 26};   /* C4 .. C5 D5 E5 F5 G5 */
+typedef struct {
+    settings_t s;
+    uint8_t used, n, len, rsv;            /* the loop: n chords, each LENGTH len */
+    uint8_t key[SEQ_MAX];
+    int8_t shift[SEQ_MAX];
+} song_t;
+static struct { uint32_t magic; song_t g[NSLOT]; } slots;
+static int slot_k = -1;                   /* the song whose key is held with SAVE */
+static uint32_t slot_at;
+static uint8_t slot_done;
+
+static int slot_of(int key)
+{
+    int i;
+    for (i = 0; i < NSLOT; i++) if (SLOT_KEY[i] == key) return i;
+    return -1;
+}
+
+static void slots_load(void)
+{
+    int n = plat_store_load(OBJ_SLOTS, &slots, sizeof slots), i;
+    if (n == (int)sizeof slots && slots.magic == SLOT_MAGIC) return;
+    if (n == (int)SLOT2_SIZE && slots.magic == SLOT2_MAGIC) {   /* the 12 songs stored before: kept, snare etc. at their defaults */
+        static uint8_t old[SLOT2_SIZE];
+        memcpy(old, &slots, SLOT2_SIZE);
+        memset(&slots, 0, sizeof slots);
+        for (i = 0; i < 12; i++) {
+            const uint8_t *o = old + 4u + (uint32_t)i * SONG2_SIZE;
+            memcpy(&slots.g[i].s, o, SET_V2_SIZE);
+            drums2_defaults(&slots.g[i].s);
+            slots.g[i].used = o[SET_V2_SIZE]; slots.g[i].n = o[SET_V2_SIZE + 1];
+            slots.g[i].len = o[SET_V2_SIZE + 2]; slots.g[i].rsv = o[SET_V2_SIZE + 3];
+            memcpy(slots.g[i].key, o + SET_V2_SIZE + 4, 16);
+            memcpy(slots.g[i].shift, o + SET_V2_SIZE + 20, 16);
+        }
+        slots.magic = SLOT_MAGIC;
+        return;
+    }
+    if (n == (int)SLOT1_SIZE && slots.magic == SLOT1_MAGIC) {   /* the 8 setups stored before: kept, no loop */
+        static uint8_t old[SLOT1_SIZE];
+        memcpy(old, &slots, SLOT1_SIZE);
+        memset(&slots, 0, sizeof slots);
+        for (i = 0; i < 8; i++) {
+            memcpy(&slots.g[i].s, old + 4u + (uint32_t)i * SET_V1_SIZE, SET_V1_SIZE);
+            slots.g[i].s.synth = 100; slots.g[i].s.master = 100;
+            drums2_defaults(&slots.g[i].s);
+            slots.g[i].used = old[4u + 8u * SET_V1_SIZE + (uint32_t)i];
+            slots.g[i].len = 2;
+        }
+        slots.magic = SLOT_MAGIC;
+        return;
+    }
+    memset(&slots, 0, sizeof slots);
+    slots.magic = SLOT_MAGIC;
+}
+
+static void slot_store(int i)
+{
+    char t[8];
+    song_t *g = &slots.g[i];
+    g->s = set;
+    g->used = 1;
+    g->n = seq.n; g->len = seq_len;
+    g->rsv = (uint8_t)((((int)seq_trk - 12) & 31) | (seq_ord << 5));   /* transpose (5 bits, signed), order */
+    memcpy(g->key, seq.key, sizeof g->key);
+    memcpy(g->shift, seq.shift, sizeof g->shift);
+    int_text(i + 1, t);
+    if (plat_store_save(OBJ_SLOTS, &slots, sizeof slots) == 0) {
+        char l[24], x[8];
+        l[0] = 0; text_cat(l, "SONG "); text_cat(l, t);
+        if (g->n) { int_text(g->n, x); text_cat(l, " + LOOP "); text_cat(l, x); }
+        banner("SAVED", l, RGB(120, 230, 140), SLOT_KEY[i], 2200u);
+        app_say("STORED IN SONG", t);
+    } else {
+        banner("NOT SAVED", "TRY AGAIN", RGB(255, 120, 100), SLOT_KEY[i], 2200u);
+        app_say("SONG", "COULD NOT STORE");
+    }
+}
+
+static void slot_recall(int i)
+{
+    settings_t was = set;
+    const song_t *g = &slots.g[i];
+    char t[24];
+    int_text(i + 1, t);
+    if (!g->used) {
+        char l[24];
+        l[0] = 0; text_cat(l, "SONG "); text_cat(l, t); text_cat(l, " - NOTHING SAVED");
+        banner("EMPTY", l, RGB(170, 166, 180), SLOT_KEY[i], 1800u);
+        app_say("SONG EMPTY", t);
+        return;
+    }
+    set = g->s;
+    set.midimap = was.midimap; set.midich = was.midich; set.page = was.page;
+    if (!settings_ok() || g->n > SEQ_MAX || g->len >= NSEQ_LEN) { set = was; app_say("SONG", "NOT READABLE"); return; }
+    seq_live();                           /* a loop playing stops: the song's is ready for PLAY */
+    seq_rec = 0;
+    seq.n = g->n; seq_len = g->len;
+    seq_trk = (uint8_t)(12 + ((int)((int8_t)(uint8_t)(g->rsv << 3)) >> 3));
+    seq_ord = (uint8_t)((g->rsv >> 5) & 3u);
+    memcpy(seq.key, g->key, sizeof seq.key);
+    memcpy(seq.shift, g->shift, sizeof seq.shift);
+    send_sound(); send_rhythm(); send_groove(); send_drums(); send_bass(); send_fx(); send_params(); send_mix();
+    if (!set.rhythm && held_idx < 0 && active) stop();
+    rechord();
+    dirty();
+    {
+        char l[24];
+        l[0] = 0; text_cat(l, "SONG "); text_cat(l, t);
+        text_cat(l, seq.n ? " - PLAY = LOOP" : "");
+        banner("LOADED", l, RGB(120, 200, 255), SLOT_KEY[i], 2200u);
+    }
+    if (seq.n) { char x[8]; int_text(seq.n, x); text_cat(t, " - LOOP "); text_cat(t, x); }
+    app_say("SONG", t);
+}
+
 static void input(void)
 {
     uint32_t keys = plat_keys(), btn = plat_buttons(), k, lit_keys = 0, lit_btn = 0, now = plat_ms();
     int32_t e;
     clock_follow(now);
+    if (plat_cpu_pct() > cpu_peak) cpu_peak = plat_cpu_pct();
+    midi_notes(now);
+    midi_ccs();
+    if (seq_play) {                       /* the screen follows the loop's chords as the engine plays them */
+        int pos = eng_prog_pos();
+        if (pos >= 0 && pos != seq_shown) {
+            chord_t c;
+            float nt[4], bs;
+            seq_shown = pos;
+            seq_chord(seq_map[pos], &c, nt, &bs);
+            show_chord(seq.key[seq_map[pos]], &c, nt, bs, 0.0f);
+        }
+    }
     for (k = 0; k < NKEYS; k++) {
         uint32_t bit = 1u << k;
+        if ((keys & bit) && !(ui.keys & bit) && ((btn >> B_SAVE) & 1u)) {   /* SAVE held: a memory, not a chord */
+            if (slot_of((int)k) >= 0) {
+                char l[8], b[16];
+                slot_k = (int)k; slot_at = now; slot_done = 0; save_used = 1;
+                int_text(slot_of((int)k) + 1, l);
+                b[0] = 0; text_cat(b, "SONG "); text_cat(b, l);
+                banner(b, "HOLD = SAVE  TAP = LOAD", RGB(255, 214, 110), (int)k, 1600u);
+            }
+            continue;
+        }
+        if (!(keys & bit) && (ui.keys & bit) && slot_k == (int)k) {         /* let go before 1.5 s: recall */
+            if (!slot_done) slot_recall(slot_of((int)k));
+            slot_k = -1;
+            continue;
+        }
         if ((keys & bit) && !(ui.keys & bit)) {
             /* with a rhythm the chord keeps playing: the same key again stops it */
             if (set.rhythm && active && held_idx < 0 && cur_idx == (int)k) stop();
-            else { held_idx = (int)k; play((int)k); }
+            else { seq_live(); key_shift = 0; mn_note = -1; held_idx = (int)k; play((int)k); seq_add((int)k); }
         } else if (!(keys & bit) && (ui.keys & bit) && held_idx == (int)k) {
             held_idx = -1;
             if (!set.rhythm) stop();
         }
     }
+    btn_now = btn;
     for (k = 0; k < NB; k++) {
         uint32_t bit = 1u << k;
+        if ((btn & bit) && !(ui.btn & bit) && k == B_SAVE) save_used = 0;
         if ((btn & bit) && !(ui.btn & bit)) button((int)k);
     }
     /* HOME + REC held 3 s: back to the settings of the first start (a countdown; let go before: nothing) */
@@ -678,7 +1332,7 @@ static void input(void)
             set.page = page;
             ui.bowl = ui.dark = ui.clean = 0;
             eng_muffle(0.0f);
-            send_sound(); send_rhythm(); send_groove(); send_drums(); send_bass(); send_fx(); send_params();
+            send_sound(); send_rhythm(); send_groove(); send_drums(); send_bass(); send_fx(); send_params(); send_mix();
             dirty();
             app_say("RESET", "FIRST SETTINGS BACK");
         } else if (!ui.reset_done && ui.reset_shown != 1u + held / 1000u) {
@@ -701,6 +1355,13 @@ static void input(void)
     for (k = 0; k < NE; k++)
         if ((e = plat_enc((int)k)) != 0)
             encoder((int)k, e);
+    /* a memory's key held 1.5 s with SAVE: store */
+    if (slot_k >= 0 && !slot_done && now - slot_at >= 1500u) { slot_store(slot_of(slot_k)); slot_done = 1; }
+    /* SAVE let go: the bowl, if no memory was used meanwhile */
+    if (!((btn >> B_SAVE) & 1u) && ((ui.btn >> B_SAVE) & 1u)) {
+        if (!save_used) { ui.bowl ^= 1u; eng_muffle(ui.bowl ? 1.0f : 0.0f); }
+        slot_k = -1;
+    }
     ui.keys = keys;
     ui.btn = btn;
     /* auto-save: 4 s after the last change, and never while a chord plays (a flash write stops the sound) */
@@ -710,10 +1371,15 @@ static void input(void)
     }
     /* lights: the keys glow, the one playing is lit; the page's button, the fun ones that are on, the pressed one */
     if (cur_idx >= 0) lit_keys |= 1u << (uint32_t)cur_idx;
+    if (now < ui.ban_until && ui.ban_key >= 0) {   /* the song's key blinks with its banner */
+        lit_keys &= ~(1u << (uint32_t)ui.ban_key);
+        if ((now / 120u) % 2u) lit_keys |= 1u << (uint32_t)ui.ban_key;
+    }
     if (set.page != PG_MAIN) lit_btn |= 1u << PAGE_BTN[set.page];
     if (ui.bowl) lit_btn |= 1u << B_SAVE;
     if (ui.dark) lit_btn |= 1u << B_ARP;
-    if (ui.clean) lit_btn |= LED_PLAY_GREEN;
+    if (seq_play) lit_btn |= LED_PLAY_GREEN;                     /* the loop plays */
+    if (seq_rec && (now / 250u) % 2u) lit_btn |= 1u << B_REC;     /* recording: REC blinks */
     /* OCT- / OCT+: lit on the side the octave went, blinking at two octaves */
     if (set.octave) {
         uint32_t ob = 1u << (set.octave < 0 ? B_OCTDN : B_OCTUP);
@@ -1583,11 +2249,23 @@ static void draw_top_text(void)
         int k = (int)((now / 3000u) % 3u);
         cv_text(8, 0, &FONT_XS, CREDIT[k], k == 2 ? RGB(170, 166, 180) : RGB(255, 214, 110));
     } else {
-        cv_text(8, 0, &FONT_XS, SOUND_NAME[set.sound], page_col());
+        cv_text(8, 0, &FONT_XS, snd_name(set.sound), page_col());
         cv_text(232 - text_w(&FONT_XS, GRID_DEF[set.grid].name), 0, &FONT_XS, GRID_DEF[set.grid].name, RGB(200, 196, 210));
     }
     cv_text(8, 9, &FONT_L, chord, active ? RGB(250, 248, 252) : RGB(170, 166, 180));
     cv_text(232 - text_w(&FONT_S, NOTE[set.key]), 19, &FONT_S, NOTE[set.key], RGB(200, 196, 210));
+}
+
+/* the songs' banner, mid-screen in the top canvas: the word big and dark in a coloured box, the line under it */
+static void draw_banner(void)
+{
+    int32_t w0 = text_w(&FONT_L, ui.ban[0]), w1 = text_w(&FONT_XS, ui.ban[1]), w = (w0 > w1 ? w0 : w1) + 24;
+    int32_t x = (240 - w) / 2, y = 56;
+    if (w > 232) { w = 232; x = 4; }
+    cv_rect(x - 2, y - 2, w + 4, 62, RGB(0, 0, 0));
+    cv_rect(x, y, w, 58, ui.ban_col);
+    cv_text((240 - w0) / 2, y + 4, &FONT_L, ui.ban[0], RGB(0, 0, 0));
+    cv_text((240 - w1) / 2, y + 42, &FONT_XS, ui.ban[1], RGB(0, 0, 0));
 }
 
 static void draw_bottom_text(void)       /* in the second canvas: y 0 = screen row 120 */
@@ -1608,6 +2286,11 @@ static void draw_bottom_text(void)       /* in the second canvas: y 0 = screen r
         int32_t x = 6 + k * 58;
         float f = knob_text(d, v);
         const felucca_font_t *vf = text_w(&FONT_S, v) <= 56 ? &FONT_S : &FONT_T;
+        {   /* a long name (a sound: STAINED GLASS) is trimmed to its column, not run off the screen's edge */
+            int n = 0;
+            while (v[n]) n++;
+            while (n > 1 && text_w(vf, v) > (k == 3 ? 52 : 56)) v[--n] = 0;
+        }
         cv_text(x, y0 + 15, &FONT_T, d->lab, RGB(190, 186, 200));
         cv_text(x, y0 + 28 + (vf == &FONT_T ? 2 : 0), vf, v, RGB(250, 248, 252));
         cv_rect(x, y0 + 47, 52, 2, RGB(60, 58, 70));
@@ -1653,6 +2336,7 @@ void app_frame(void)
         cv_begin(240, 120, 0);
         draw_cells(0);
         if (sc.title < 0.5f && !ui.clean) draw_top_text();
+        if (now < ui.ban_until) draw_banner();
         cv_blit(0, 0);
         cv_begin(240, 120, 0);
         draw_cells(40);
@@ -1688,6 +2372,41 @@ int app_expect(const char *what, int *got)
     else if (!strcmp(what, "bsound")) *got = set.bsound;
     else if (!strcmp(what, "creature")) *got = set.creature;
     else if (!strcmp(what, "reverb")) *got = set.reverb;
+    else if (!strcmp(what, "blevel")) *got = set.blevel;
+    else if (!strcmp(what, "shift")) *got = key_shift;
+    else if (!strcmp(what, "root")) *got = set.root;
+    else if (!strcmp(what, "midimap")) *got = set.midimap;
+    else if (!strcmp(what, "midich")) *got = set.midich;
+    else if (!strcmp(what, "croot")) *got = active ? build_chord(cur_idx).root : -1;
+    else if (!strcmp(what, "cminor")) {         /* the chord playing has a minor third (1), a major one (0) */
+        chord_t c = build_chord(cur_idx);
+        int i, m = 0;
+        for (i = 0; i < c.n; i++) if (c.iv[i] == 3) m = 1;
+        *got = active ? m : -1;
+    }
+    else if (!strcmp(what, "strum")) *got = set.strum;
+    else if (!strcmp(what, "seqn")) *got = seq.n;
+    else if (!strcmp(what, "dens")) *got = set.dens;
+    else if (!strcmp(what, "bmotif")) *got = set.bmotif;
+    else if (!strcmp(what, "dsn")) *got = set.dsn;
+    else if (!strcmp(what, "dcl")) *got = set.dcl;
+    else if (!strcmp(what, "dtm")) *got = set.dtm;
+    else if (!strcmp(what, "dbl")) *got = set.dbl;
+    else if (!strcmp(what, "synth")) *got = set.synth;
+    else if (!strcmp(what, "master")) *got = set.master;
+    else if (!strcmp(what, "seqlen")) *got = seq_len;
+    else if (!strcmp(what, "seqchord")) *got = seq_play && seq_shown >= 0 ? seq_map[seq_shown] : -1;
+    else if (!strcmp(what, "seqtr")) *got = (int)seq_trk - 12;
+    else if (!strcmp(what, "seqord")) *got = seq_ord;
+    else if (!strcmp(what, "seqrec")) *got = seq_rec;
+    else if (!strcmp(what, "seqplay")) *got = seq_play;
+    else if (!strcmp(what, "seqpos")) *got = seq_play ? eng_prog_pos() : -1;
+    else if (!strcmp(what, "slots")) { int i, n = 0; for (i = 0; i < NSLOT; i++) n += slots.g[i].used; *got = n; }
+    else if (!strcmp(what, "dpat")) *got = set.dpat;
+    else if (!strcmp(what, "dkick")) *got = set.dkick;
+    else if (!strcmp(what, "dhat")) *got = set.dhat;
+    else if (!strcmp(what, "drim")) *got = set.drim;
+    else if (!strcmp(what, "chorus")) *got = set.chorus;
     else return 0;
     return 1;
 }
