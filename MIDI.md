@@ -31,7 +31,7 @@ In KEY = C:
 
 Other keys move the same way: F# minor = KEY F#, SCALE MINOR. RICHNESS adds 7ths and 9ths as usual.
 
-## MIDI MAP (HOME + LFO) and MIDI CHANNEL (HOME + ENV)
+## MIDI MAP (HOME + LFO) and MIDI CHANNEL (HOME + EDIT)
 
 - **MIDI MAP:** **STANDARD** (default), the chart below; **OFF**, notes only (controllers ignored).
 - **MIDI CHANNEL:** **ALL** (default), or 1 to 16.
@@ -46,18 +46,20 @@ app for it).
 
 **Four knobs for everything:** set four knobs to **CC 16, 17, 18, 19**: they are K1-K4 of the page on the FM-1's
 screen, so the page buttons choose what they change. **CC 15** picks the page
-(0-18 MAIN, 19-36 FX, 37-54 CHORDS, 55-73 GROOVE, 74-91 BASS, 92-109 DECOR, 110-127 DRUMS).
+(0-12 MAIN, 13-25 FX, 26-38 CHORDS, 39-51 GROOVE, 52-64 BASS, 65-76 DECOR, 77-89 DRUMS, 90-102 SEQ, 103-115 MIXER, 116-127 DRUMS 2).
 
 **Or one number per setting** (0-127 spans the whole range; a setting on another page shows on the screen):
 
 | Page | K1 | K2 | K3 | K4 |
 | --- | --- | --- | --- | --- |
-| MAIN (HOME) | 20 Cutoff | 21 Glide | 22 Length | 23 Drums level |
+| MAIN (HOME) | 87 Sound | 20 Cutoff | 21 Glide | 22 Length |
+| GROOVE 2 (HOME + ENV) | 23 Strum | | | |
 | FX | 24 Delay | 25 Tremolo | 26 Chorus | 27 Reverb |
 | CHORDS (SCL) | 28 Key | 29 Voicing | 30 Richness | 31 Scale |
 | GROOVE (ENV) | 102 BPM | 103 Swing | 104 Density | 105 Sidechain |
 | BASS (LFO) | 106 Sound | 107 Level | 108 Riff | 109 Filter |
-| DRUMS (GLO) | 110 Pattern | 111 Kick | 112 Hi-hat | 113 Rim |
+| DRUMS (GLO) | 110 Pattern | 111 Kick | 52 Snare | 112 Hi-hat |
+| DRUMS 2 (HOME + GLO) | 113 Rim | 53 Clap | 54 Tom | 55 Cowbell |
 | DECOR (EDIT) | 114 Creature | 115 Eyes | 116 Backdrop | 117 Extra |
 
 | Other | CC |

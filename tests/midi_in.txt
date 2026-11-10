@@ -79,7 +79,7 @@ wait 30
 expect blevel 50
 midi TRS B0 6E 7F
 wait 30
-expect dpat 9
+expect dpat 39
 # the usual numbers too: 74 brightness = cutoff, 93 chorus
 midi TRS B0 4A 40
 wait 30
@@ -110,7 +110,8 @@ expect reverb 100
 midi TRS B0 0F 00
 wait 30
 expect page 0
-midi TRS B0 10 00
+# (page 0 now: K1 sound, K2 cutoff)
+midi TRS B0 11 00
 wait 30
 expect cutoff 0
 # a knob's sweep: only the latest value counts
@@ -155,7 +156,7 @@ expect root 1
 midi TRS B0 59 00
 wait 30
 expect root 0
-# a keyboard's chord mode: C, Eb, G together play C's chord (the lowest), and pressing it again stops the rhythm
+# a KeyStep's chord mode: C, Eb, G together play C's chord (the lowest), and pressing it again stops the rhythm
 midi TRS B0 7B 00
 wait 30
 turn ALGO 3
@@ -182,7 +183,7 @@ wait 30
 turn ALGO -3
 wait 30
 expect rhythm 0
-# MIDI MAP STANDARD (the default): 71 / 1 do nothing (other gear's resonance and mod wheel)
+# MIDI MAP STANDARD (the default): a KeyStep's 71 / 1 do nothing (other gear's resonance and mod wheel)
 expect midimap 0
 midi TRS B0 47 7F
 wait 30
@@ -190,20 +191,32 @@ expect drums 0
 midi TRS B0 01 00
 wait 30
 expect bsound 2
-# a drum turned up (111 kick, 112 hi-hat, 113 rim) while the drums are off switches them on
-midi TRS B0 6F 7F
+# HOME + LFO: MIDI MAP KEYSTEP 37
+press HOME
+wait 30
+tap LFO
+wait 30
+release HOME
+wait 30
+expect midimap 1
+expect page 0
+# the KeyStep 37's knobs as it comes: 74 cutoff, 71 kick, 76 hi-hat, 77 rim; a drum turned up switches the drums on
+midi TRS B0 17 00
+wait 30
+expect drums 0
+midi TRS B0 47 7F
 wait 30
 expect drums 70
-expect dkick 100
-midi TRS B0 70 00
-wait 30
-expect dhat 0
-midi TRS B0 71 7F
-wait 30
-expect drim 100
 midi TRS B0 4A 7F
 wait 30
 expect cutoff 100
+expect dkick 100
+midi TRS B0 4C 00
+wait 30
+expect dhat 0
+midi TRS B0 4D 7F
+wait 30
+expect drim 100
 # a light, short press (on and off together) still plays: with a rhythm it latches
 midi TRS B0 7B 00
 wait 30
@@ -220,15 +233,21 @@ wait 60
 expect chord 9
 turn ALGO -3
 wait 30
-# HOME + LFO: OFF, the controllers do nothing (notes still play)
+# the mod strip (CC 1): the bass sound (0 = off, the top = the last one)
+midi TRS B0 01 00
+wait 30
+expect bsound 0
+midi TRS B0 01 7F
+wait 30
+expect bsound 20
+# HOME + LFO again: OFF, the controllers do nothing (notes still play)
 press HOME
 wait 30
 tap LFO
 wait 30
 release HOME
 wait 30
-expect midimap 1
-expect page 0
+expect midimap 2
 midi TRS B0 14 00
 wait 30
 expect cutoff 100
@@ -244,17 +263,17 @@ wait 30
 release HOME
 wait 30
 expect midimap 0
-# HOME + ENV: MIDI channel 1, then 2: channel 1's notes are not ours any more
+# HOME + EDIT: MIDI channel 1, then 2: channel 1's notes are not ours any more
 press HOME
 wait 30
-tap ENV
+tap EDIT
 wait 30
 release HOME
 wait 30
 expect midich 1
 press HOME
 wait 30
-tap ENV
+tap EDIT
 wait 30
 release HOME
 wait 30
@@ -373,3 +392,565 @@ expect bowl 1
 tap SAVE
 wait 30
 expect bowl 0
+# the looper: REC, 4 chords (C F A G keys), REC; PLAY loops them, one bar each (118 BPM: 2.03 s)
+midi TRS B1 7B 00
+wait 30
+tap REC
+wait 30
+expect seqrec 1
+key 7 down
+wait 30
+key 7 up
+wait 30
+key 16 down
+wait 30
+key 16 up
+wait 30
+key 12 down
+wait 30
+key 12 up
+wait 30
+key 14 down
+wait 30
+key 14 up
+wait 30
+expect seqn 4
+tap REC
+wait 30
+expect seqrec 0
+expect seqn 4
+tap PLAY
+wait 100
+expect seqplay 1
+expect seqpos 0
+expect chord 7
+expect active 1
+wait 2050
+expect seqpos 1
+expect chord 16
+wait 2050
+expect seqpos 2
+expect chord 12
+# the SEQ page: LENGTH 1 BEAT (K1), and back
+tap SEQ
+wait 30
+expect page 7
+turn K1 -2
+wait 30
+tap SEQ
+wait 30
+expect page 0
+expect seqplay 1
+# a key played takes over: the loop stops, the key's chord plays
+key 9 down
+wait 30
+expect seqplay 0
+expect chord 9
+key 9 up
+wait 30
+expect seqn 4
+# PLAY: the loop again; PLAY: stop
+tap PLAY
+wait 60
+expect seqplay 1
+expect seqpos 0
+tap PLAY
+wait 60
+expect seqplay 0
+expect active 0
+# REC, nothing, REC: an empty loop; PLAY then stops and brings back what plays (a rhythm latches here)
+tap REC
+wait 30
+tap REC
+wait 30
+expect seqn 0
+turn ALGO 3
+wait 30
+key 7 down
+wait 30
+key 7 up
+wait 30
+expect active 1
+tap PLAY
+wait 30
+expect active 0
+tap PLAY
+wait 30
+expect active 1
+expect chord 7
+tap PLAY
+wait 30
+expect active 0
+turn ALGO -3
+wait 30
+# MIXER (ARP): SYNTH, BASS (the BASS page's), DRUMS (MAIN's), MASTER; CC 119 synth, 7 master
+tap ARP
+wait 30
+expect page 8
+expect synth 100
+expect master 100
+turn K1 -1
+wait 30
+expect synth 97
+tap ARP
+wait 30
+expect page 0
+midi TRS B1 77 00
+wait 30
+expect synth 0
+midi TRS B1 07 40
+wait 30
+expect master 50
+midi TRS B1 77 7F
+wait 30
+midi TRS B1 07 7F
+wait 30
+expect synth 100
+expect master 100
+# songs: REC 2 chords, LENGTH 2 BEATS, store in song 9 (D5 = key 21) with SAVE held 1.5 s; a new loop; load song 9:
+# its loop (2 chords, 2 beats) and its sound come back
+tap REC
+wait 30
+key 7 down
+wait 30
+key 7 up
+wait 30
+key 14 down
+wait 30
+key 14 up
+wait 30
+tap REC
+wait 30
+tap SEQ
+wait 30
+turn K1 1
+wait 30
+tap SEQ
+wait 30
+expect seqlen 1
+turn PRESET 2
+wait 30
+expect sound 5
+press SAVE
+wait 30
+key 21 down
+wait 1700
+key 21 up
+wait 30
+release SAVE
+wait 30
+expect bowl 0
+tap REC
+wait 30
+key 9 down
+wait 30
+key 9 up
+wait 30
+tap REC
+wait 30
+expect seqn 1
+turn PRESET 3
+wait 30
+expect sound 8
+press SAVE
+wait 30
+key 21 down
+wait 100
+key 21 up
+wait 30
+release SAVE
+wait 30
+expect sound 5
+expect seqn 2
+expect seqlen 1
+tap PLAY
+wait 60
+expect seqplay 1
+expect chord 7
+tap PLAY
+wait 60
+expect seqplay 0
+# HOME + OCT+: the CPU (the octave does not move)
+press HOME
+wait 30
+tap OCT+
+wait 30
+release HOME
+wait 30
+expect octave 0
+expect page 0
+# LENGTH 4 BARS (64 steps): a 2-chord loop changes after 4 bars (118 BPM: 8.14 s), not before
+tap REC
+wait 30
+key 7 down
+wait 30
+key 7 up
+wait 30
+key 14 down
+wait 30
+key 14 up
+wait 30
+tap REC
+wait 30
+tap SEQ
+wait 30
+turn K1 6
+wait 30
+tap SEQ
+wait 30
+expect seqlen 4
+tap PLAY
+wait 100
+expect seqpos 0
+wait 7900
+expect seqpos 0
+wait 400
+expect seqpos 1
+tap PLAY
+wait 60
+expect seqplay 0
+# STRUM is CC 23 (GROOVE 2, K1); HOME K4 is LENGTH; the drums level is on the MIXER (CC 12)
+tap HOME
+wait 30
+expect page 0
+midi TRS B1 17 05
+wait 30
+expect strum 3
+midi TRS B1 17 00
+wait 30
+expect strum 0
+midi TRS B1 0C 7F
+wait 30
+expect drums 100
+midi TRS B1 0C 00
+wait 30
+expect drums 0
+# SEQ page: LENGTH 1 BEAT, a 3-chord loop (C4 D4 E4 keys = 7 9 11); 1 beat at 118 BPM = 508 ms
+tap REC
+wait 30
+key 7 down
+wait 30
+key 7 up
+wait 30
+key 9 down
+wait 30
+key 9 up
+wait 30
+key 11 down
+wait 30
+key 11 up
+wait 30
+tap REC
+wait 30
+tap SEQ
+wait 30
+turn K1 -8
+wait 30
+expect seqlen 0
+# ORDER BACKWARD: the last recorded first
+turn K3 1
+wait 30
+expect seqord 1
+tap PLAY
+wait 100
+expect seqchord 2
+wait 520
+expect seqchord 1
+wait 510
+expect seqchord 0
+tap PLAY
+wait 60
+# PING-PONG: 0 1 2 1 0 ...
+turn K3 1
+wait 30
+expect seqord 2
+tap PLAY
+wait 100
+expect seqchord 0
+wait 510
+expect seqchord 1
+wait 510
+expect seqchord 2
+wait 510
+expect seqchord 1
+wait 510
+expect seqchord 0
+tap PLAY
+wait 60
+# RANDOM: never the same chord twice in a row
+turn K3 1
+wait 30
+expect seqord 3
+tap PLAY
+wait 100
+expect seqplay 1
+wait 2000
+expect seqplay 1
+tap PLAY
+wait 60
+turn K3 -3
+wait 30
+expect seqord 0
+# TRANSPOSE +2: the loop's first chord (C) plays as D; the name's root follows
+turn K2 2
+wait 30
+expect seqtr 2
+tap PLAY
+wait 100
+expect seqchord 0
+expect chord 7
+tap PLAY
+wait 60
+# SOUND (K4) is the preset
+turn K4 1
+wait 30
+expect sound 6
+turn K4 -1
+wait 30
+expect sound 5
+# a song keeps TRANSPOSE and ORDER: store in song 11 (F5 = key 24), change them, load it back
+turn K3 2
+wait 30
+expect seqord 2
+press SAVE
+wait 30
+key 24 down
+wait 1700
+key 24 up
+wait 30
+release SAVE
+wait 30
+turn K2 -5
+wait 30
+turn K3 -2
+wait 30
+expect seqtr -3
+expect seqord 0
+press SAVE
+wait 30
+key 24 down
+wait 100
+key 24 up
+wait 30
+release SAVE
+wait 30
+expect seqtr 2
+expect seqord 2
+tap SEQ
+wait 30
+# the ANALOG family: the sound knob (SEQ K4) and CC 87 reach sounds 32..39
+tap SEQ
+wait 30
+turn K4 1
+wait 30
+turn K4 1
+wait 30
+tap SEQ
+wait 30
+midi TRS B1 57 5A
+wait 30
+expect sound 33
+midi TRS B1 57 7D
+wait 30
+expect sound 46
+turn PRESET 1
+wait 30
+expect sound 47
+turn PRESET 1
+wait 30
+expect sound 0
+turn PRESET -1
+wait 30
+expect sound 47
+turn PRESET -7
+wait 30
+expect sound 40
+turn PRESET 1
+wait 30
+midi TRS B1 57 00
+wait 30
+expect sound 0
+# hold FX + SCL: ARP lamp, SEQ pirouette, PLAY picture only, REC food; the page stays where it was
+expect page 0
+press FX
+press SEL
+wait 60
+expect page 0
+tap ARP
+wait 60
+expect dark 1
+expect page 0
+tap ARP
+wait 60
+expect dark 0
+tap PLAY
+wait 60
+expect clean 1
+tap PLAY
+wait 60
+expect clean 0
+tap SEQ
+wait 60
+expect seqrec 0
+expect page 0
+release SEL
+release FX
+wait 60
+expect page 0
+# the other order too, from the FX page
+tap FX
+wait 30
+expect page 1
+press SEL
+press FX
+wait 60
+expect page 1
+tap ARP
+wait 60
+expect dark 1
+tap ARP
+wait 60
+release FX
+release SEL
+wait 60
+tap HOME
+wait 30
+expect page 0
+# DRUMS 2: HOME + GLO opens it (and back); snare, clap, tom, cowbell on K1..K4 and CC 52..55; 20 patterns
+tap HOME
+wait 30
+expect page 0
+press HOME
+wait 30
+tap GLO
+wait 30
+release HOME
+wait 30
+expect page 9
+expect dsn 70
+turn K1 -1
+wait 30
+expect drim 97
+midi TRS B1 34 7F
+wait 30
+expect dsn 100
+midi TRS B1 35 00
+wait 30
+expect dcl 0
+midi TRS B1 36 40
+wait 30
+expect dtm 50
+midi TRS B1 37 7F
+wait 30
+expect dbl 100
+press HOME
+wait 30
+tap GLO
+wait 30
+release HOME
+wait 30
+expect page 6
+tap GLO
+wait 30
+expect page 0
+midi TRS B1 6E 00
+wait 30
+expect dpat 0
+midi TRS B1 6E 7F
+wait 30
+expect dpat 39
+# DENSITY (GROOVE page K3): even steps; the centre (50) is a detent and can always be found again
+midi TRS B1 68 44
+wait 30
+expect dens 53
+tap ENV
+wait 30
+expect page 3
+turn K3 -1
+wait 150
+expect dens 51
+turn K3 -1
+wait 150
+expect dens 50
+turn K3 -1
+wait 150
+expect dens 48
+turn K3 1
+wait 150
+expect dens 50
+turn K3 1
+wait 150
+expect dens 52
+turn K3 -1
+wait 150
+expect dens 50
+# a long fast turn goes to the ends; a slow click that crosses the centre stops on it
+turn K3 -60
+wait 300
+expect dens 0
+turn K3 60
+wait 300
+expect dens 100
+turn K3 -60
+wait 300
+expect dens 0
+# from the bottom, 25 slow clicks of 2 reach 50 exactly
+turn K3 -40
+wait 300
+expect dens 0
+turn K3 1
+wait 150
+turn K3 1
+wait 150
+turn K3 1
+wait 150
+turn K3 1
+wait 150
+turn K3 1
+wait 150
+expect dens 10
+tap ENV
+wait 30
+midi TRS B1 68 40
+wait 30
+expect dens 50
+# the bass: 18 sounds (CC 106) and 24 patterns (CC 108), the last ones reachable
+midi TRS B1 6A 00
+wait 30
+expect bsound 0
+midi TRS B1 6A 7F
+wait 30
+expect bsound 20
+midi TRS B1 6C 7F
+wait 30
+expect bmotif 28
+midi TRS B1 6C 00
+wait 30
+expect bmotif 0
+midi TRS B1 6A 40
+wait 30
+# a new bass sound and pattern play (with a rhythm and the chord): the bass is silent only when it is OFF
+tap LFO
+wait 30
+expect page 4
+tap LFO
+wait 30
+expect page 0
+# the drum menu: the DRUMS page is PATTERN, KICK, SNARE, HI-HAT (K1..K4); DRUMS 2 is RIM, CLAP, TOM, COWBELL
+midi TRS B1 0C 7F
+wait 30
+tap GLO
+wait 30
+expect page 6
+turn K3 -1
+wait 30
+expect dsn 97
+midi TRS B1 70 7F
+wait 30
+expect dhat 100
+turn K4 -1
+wait 30
+expect dhat 97
+tap GLO
+wait 30
+expect page 0

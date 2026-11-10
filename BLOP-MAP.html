@@ -1,0 +1,175 @@
+<title>Blop v30 Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* layout: a map of the FM-1's pages. Each page keeps the colour the device itself shows for it. */
+:root{
+  --bg:#f3f2ef; --panel:#ffffff; --fg:#1d1c1f; --mute:#68656e; --line:#d9d6d0; --key:#e9e6df; --keyfg:#1d1c1f;
+  --hid:#8a4b00; --hidbg:#fff3df;
+  --c-main:#e45cb4; --c-fx:#8a5cf0; --c-acc:#1aa6c9; --c-groove:#d9a21a; --c-bass:#38b04a;
+  --c-decor:#8c8a92; --c-drums:#e8602c; --c-seq:#8fc21f; --c-mix:#e8903a;
+  --display:'Barlow Semi Condensed','Arial Narrow',sans-serif; --body:'Barlow',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141317; --panel:#1e1d23; --fg:#efedf2; --mute:#a09da8; --line:#34323b; --key:#2c2a33; --keyfg:#efedf2; --hid:#ffb865; --hidbg:#2d2418;
+  --c-main:#ff96dc; --c-fx:#be96ff; --c-acc:#78e6ff; --c-groove:#ffd66e; --c-bass:#8cf096; --c-decor:#c0bec6; --c-drums:#ff8c64; --c-seq:#c8ff78; --c-mix:#ffbe78; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141317; --panel:#1e1d23; --fg:#efedf2; --mute:#a09da8; --line:#34323b; --key:#2c2a33; --keyfg:#efedf2; --hid:#ffb865; --hidbg:#2d2418;
+  --c-main:#ff96dc; --c-fx:#be96ff; --c-acc:#78e6ff; --c-groove:#ffd66e; --c-bass:#8cf096; --c-decor:#c0bec6; --c-drums:#ff8c64; --c-seq:#c8ff78; --c-mix:#ffbe78; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.45 var(--body);margin:0;
+  padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font:700 clamp(2rem,6vw,3.2rem)/1 var(--display);margin:0 0 6px;letter-spacing:.01em;text-wrap:balance}
+h2{font:700 1.5rem/1.1 var(--display);margin:44px 0 6px;text-transform:uppercase;letter-spacing:.06em}
+.sub{color:var(--mute);margin:0 0 12px;max-width:62ch}
+.how{display:flex;flex-wrap:wrap;gap:8px 18px;margin:14px 0 0;font-size:.92rem;color:var(--mute);align-items:center}
+.cap{display:inline-block;font:500 .78rem/1 var(--mono);background:var(--key);color:var(--keyfg);border:1px solid var(--line);border-bottom-width:3px;border-radius:5px;padding:5px 7px;white-space:nowrap}
+.plus{color:var(--mute);font-weight:700;margin:0 3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-top:16px}
+.card{background:var(--panel);border:1px solid var(--line);padding:14px;min-width:0;border-radius:4px}
+.card.hid{border:2px dashed var(--hid);background:var(--hidbg)}
+.top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chip{width:14px;height:14px;border-radius:50%;flex:none}
+.pname{font:700 1.25rem/1 var(--display);letter-spacing:.04em}
+.tag{font:600 .68rem/1 var(--display);letter-spacing:.1em;color:var(--hid);border:1px solid var(--hid);padding:3px 5px;text-transform:uppercase;margin-left:auto}
+.knobs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.k{text-align:center;min-width:0}
+.dial{width:42px;height:42px;border-radius:50%;margin:0 auto 5px;border:3px solid var(--c);position:relative;background:var(--bg)}
+.dial::after{content:"";position:absolute;left:50%;top:3px;width:3px;height:12px;margin-left:-1.5px;background:var(--c);border-radius:2px;transform:rotate(var(--r,0deg));transform-origin:50% 18px}
+.k:nth-child(1) .dial{--r:-40deg}.k:nth-child(2) .dial{--r:-10deg}.k:nth-child(3) .dial{--r:20deg}.k:nth-child(4) .dial{--r:50deg}
+.kn{font:600 .74rem/1.1 var(--display);letter-spacing:.04em;text-transform:uppercase;overflow-wrap:anywhere}
+.k small{display:block;color:var(--mute);font:500 .66rem/1.2 var(--body);margin-top:2px;overflow-wrap:anywhere}
+.k.free{opacity:.4}
+.kk{font:500 .62rem var(--mono);color:var(--mute);display:block;margin-bottom:3px}
+.via{font-size:.85rem;color:var(--mute);margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.enc{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:16px}
+.enc .card b{font:700 1.05rem var(--display);letter-spacing:.05em;text-transform:uppercase;display:block}
+.enc .card span{color:var(--mute);font-size:.93rem}
+.rows{margin-top:16px;display:grid;gap:10px}
+.row{display:grid;grid-template-columns:minmax(150px,230px) 1fr;gap:6px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);padding:11px 14px;border-radius:4px}
+.row.hid{border-style:dashed;border-color:var(--hid)}
+.row .d{min-width:0}
+.group{font:600 .8rem var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:26px 0 0}
+@media (max-width:560px){.row{grid-template-columns:1fr}}
+.tbl{overflow-x:auto;margin-top:16px;border:1px solid var(--line);background:var(--panel);border-radius:4px}
+table{border-collapse:collapse;width:100%;min-width:480px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);font-size:.93rem;vertical-align:top}
+th{font:700 .8rem var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+tr:last-child td{border-bottom:0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:.9rem}
+.legend i{display:inline-block;width:26px;height:14px;vertical-align:-2px;margin-right:6px}
+.solid{border:2px solid var(--fg)} .dash{border:2px dashed var(--hid);background:var(--hidbg)}
+.foot{margin-top:46px;color:var(--mute);font-size:.88rem;border-top:1px solid var(--line);padding-top:14px}
+</style>
+<div class="wrap">
+<h1>Blop v30 map</h1>
+<p class="sub">Every page, every knob and every hidden shortcut on your FM-1. Each page has the colour the device shows for it.</p>
+<div class="legend"><span><i class="solid"></i>Page with its own button</span><span><i class="dash"></i>Hidden: needs a combo</span></div>
+<div class="how"><span><span class="cap">HOME</span><span class="plus">+</span><span class="cap">GLO</span> means hold the first, tap the second.</span><span>Press a page button again to go back to MAIN.</span></div>
+
+<h2>The pages</h2>
+<p class="sub">Each page has 4 settings on knobs K1 to K4. Turn a knob and the value shows on the screen.</p>
+<div class="grid" id="pages"></div>
+
+<h2>The 5 big knobs</h2>
+<div class="enc">
+ <div class="card"><b>Select</b><span>Chord grid, 38 grids. Used when SCALE is GRID.</span></div>
+ <div class="card"><b>Algorithm</b><span>Rhythm, 16. OFF: the chord sounds while held. A rhythm: the chord keeps going (latch), the same key again stops it.</span></div>
+ <div class="card"><b>Preset</b><span>Sound, 48 in 6 families: Pads, Keys, Plucks, Experimental, Analog, Dark wave. Same as HOME K1.</span></div>
+ <div class="card"><b>Master</b><span>Volume.</span></div>
+</div>
+
+<h2>Hidden: combos with HOME</h2>
+<div class="rows">
+ <div class="row hid"><div><span class="cap">HOME</span><span class="plus">+</span><span class="cap">GLO</span></div><div class="d"><b>DRUMS 2</b>: Rim, Clap, Tom, Cowbell. Again = back to DRUMS.</div></div>
+ <div class="row hid"><div><span class="cap">HOME</span><span class="plus">+</span><span class="cap">ENV</span></div><div class="d"><b>GROOVE 2</b>: Strum. Again = back to GROOVE.</div></div>
+ <div class="row hid"><div><span class="cap">HOME</span><span class="plus">+</span><span class="cap">SCL</span></div><div class="d">Scale on/off. GRID and your last scale swap.</div></div>
+ <div class="row hid"><div><span class="cap">HOME</span><span class="plus">+</span><span class="cap">LFO</span></div><div class="d">MIDI MAP: STANDARD, then KEYSTEP 37, then OFF.</div></div>
+ <div class="row hid"><div><span class="cap">HOME</span><span class="plus">+</span><span class="cap">EDIT</span></div><div class="d">MIDI channel: ALL, 1, 2 ... 16.</div></div>
+ <div class="row hid"><div><span class="cap">HOME</span><span class="plus">+</span><span class="cap">OCT+</span></div><div class="d">CPU meter: load, peak, dropouts (XRUNS).</div></div>
+ <div class="row hid"><div>Hold <span class="cap">HOME</span></div><div class="d">Help screen.</div></div>
+ <div class="row hid"><div>Hold <span class="cap">HOME</span><span class="plus">+</span><span class="cap">REC</span> 3 s</div><div class="d">Reset to my defaults. Let go early to cancel.</div></div>
+</div>
+
+<h2>Songs: 12 memories</h2>
+<div class="rows">
+ <div class="row hid"><div><span class="cap">SAVE</span><span class="plus">+</span>hold a white key</div><div class="d">Saves the whole setup and loop into that song. Keys C4 to G5 are songs 1 to 12. Hold 1.5 s. Green banner: SAVED.</div></div>
+ <div class="row hid"><div><span class="cap">SAVE</span><span class="plus">+</span>tap a white key</div><div class="d">Loads that song. Blue banner: LOADED. Press PLAY for its loop. Grey banner: EMPTY.</div></div>
+ <div class="row"><div><span class="cap">SAVE</span> alone</div><div class="d">The creature in its bowl, the music heard from outside.</div></div>
+</div>
+<p class="sub" style="margin-top:12px">Settings also save themselves 4 s after your last change, when no chord is playing.</p>
+
+<h2>Looper and keys</h2>
+<div class="rows">
+ <div class="row"><div><span class="cap">REC</span></div><div class="d">Start recording. Play chords, press REC again to finish. REC blinks while recording.</div></div>
+ <div class="row"><div><span class="cap">PLAY</span></div><div class="d">Play or stop the loop. With no loop: stop or bring back the chord.</div></div>
+ <div class="row"><div><span class="cap">OCT-</span> <span class="cap">OCT+</span></div><div class="d">Octave from -2 to +2.</div></div>
+ <div class="row"><div>27 keys</div><div class="d">Chords. GRID: the grid's chords. A scale: the key is the root.</div></div>
+</div>
+
+<h2>Creature tricks</h2>
+<div class="rows">
+ <div class="row hid"><div>Hold <span class="cap">FX</span><span class="plus">+</span><span class="cap">SCL</span>, then tap</div><div class="d"><span class="cap">ARP</span> lamp &nbsp; <span class="cap">SEQ</span> pirouette &nbsp; <span class="cap">PLAY</span> picture only &nbsp; <span class="cap">REC</span> feed</div></div>
+ <div class="row hid"><div><span class="cap">HOME</span><span class="plus">+</span> one of</div><div class="d"><span class="cap">SEQ</span> pirouette &nbsp; <span class="cap">PLAY</span> picture only &nbsp; <span class="cap">ARP</span> feed the creature &nbsp; <span class="cap">SAVE</span> the lamp</div></div>
+</div>
+
+<h2>Arturia KeyStep 37</h2>
+<p class="sub">With MIDI MAP = KEYSTEP 37.</p>
+<div class="tbl"><table>
+<tr><th>On the KeyStep</th><th>Does</th></tr>
+<tr><td>Keys</td><td>Chords, one octave above the FM-1 keys. Light presses work.</td></tr>
+<tr><td>OCT- / OCT+</td><td>One octave lower or higher</td></tr>
+<tr><td>TYPE knob (CC 74)</td><td>Cutoff</td></tr>
+<tr><td>NOTE knob (CC 71)</td><td>Kick (turns the drums on)</td></tr>
+<tr><td>VEL knob (CC 76)</td><td>Hi-hat</td></tr>
+<tr><td>4th knob (CC 77)</td><td>Rim</td></tr>
+<tr><td>Mod strip (CC 1)</td><td>Bass sound</td></tr>
+<tr><td>RATE, DIV</td><td>Nothing: they send no MIDI</td></tr>
+</table></div>
+
+<h2>Any MIDI controller</h2>
+<div class="tbl"><table>
+<tr><th>CC</th><th>Does</th></tr>
+<tr><td>16 17 18 19</td><td>K1 to K4 of the page on screen</td></tr>
+<tr><td>15</td><td>Picks the page (0-12 MAIN, 13-25 FX, 26-38 CHORDS, 39-51 GROOVE, 52-64 BASS, 65-76 DECOR, 77-89 DRUMS, 90-102 SEQ, 103-115 MIXER, 116-127 DRUMS 2)</td></tr>
+<tr><td>20 / 21 / 22 / 23</td><td>Cutoff / Glide / Length / Strum (23 is on GROOVE 2)</td></tr>
+<tr><td>87</td><td>Sound (preset)</td></tr>
+<tr><td>24 25 26 27</td><td>Tape echo, Phaser, Juno, Cloud</td></tr>
+<tr><td>28 29 30 31 (and 89)</td><td>Key, Voicing, Richness, Scale</td></tr>
+<tr><td>102 103 104 105</td><td>BPM, Swing, Density, Sidechain</td></tr>
+<tr><td>106 107 108 109</td><td>Bass sound, level, riff, filter</td></tr>
+<tr><td>110 111 52 112</td><td>Drum pattern, Kick, Snare, Hi-hat</td></tr>
+<tr><td>113 53 54 55</td><td>Rim, Clap, Tom, Cowbell</td></tr>
+<tr><td>114 115 116 117</td><td>Creature, Eyes, Backdrop, Extra</td></tr>
+<tr><td>119 / 12 / 7</td><td>Synth level / Drums level / Master</td></tr>
+<tr><td>85 / 86 / 90 / 118</td><td>Chord grid / Rhythm / Octave / Strum</td></tr>
+<tr><td>123 or 120</td><td>All notes off</td></tr>
+</table></div>
+<p class="foot">Made from the v30 source and tests. Not every combo has been checked by eye on the device. Full text in versions/CHEATSHEET.md.</p>
+</div>
+<script>
+var P=[
+ {n:"MAIN",b:"HOME",c:"main",s:"The synth page",k:[["Sound","preset"],["Cutoff",""],["Glide",""],["Length","chord note length"]]},
+ {n:"FX",b:"FX",c:"fx",k:[["Tape echo","synced"],["Phaser",""],["Juno","I, II, I+II"],["Cloud","hall 3-10 s"]]},
+ {n:"CHORDS",b:"SCL",c:"acc",k:[["Key",""],["Voicing",""],["Richness",""],["Scale","6 scales"]]},
+ {n:"GROOVE",b:"ENV",c:"groove",k:[["BPM",""],["Swing",""],["Density","0 = as written"],["Sidechain","on / off"]]},
+ {n:"GROOVE 2",b:"HOME + ENV",c:"groove",h:1,k:[["Strum","0 = together"],["",""],["",""],["",""]]},
+ {n:"BASS",b:"LFO",c:"bass",k:[["Sound","21"],["Level",""],["Riff","29 patterns"],["Filter",""]]},
+ {n:"DRUMS",b:"GLO",c:"drums",k:[["Pattern","40"],["Kick",""],["Snare",""],["Hi-hat",""]]},
+ {n:"DRUMS 2",b:"HOME + GLO",c:"drums",h:1,k:[["Rim",""],["Clap",""],["Tom",""],["Cowbell",""]]},
+ {n:"DECOR",b:"EDIT",c:"decor",k:[["Creature",""],["Eyes",""],["Backdrop",""],["Extra",""]]},
+ {n:"SEQ",b:"SEQ",c:"seq",s:"The looper",k:[["Length","1 beat to 4 bars"],["Transpose","+/-12"],["Order","4 modes"],["Sound","preset"]]},
+ {n:"MIXER",b:"ARP",c:"mix",k:[["Synth",""],["Bass",""],["Drums","all drums"],["Master",""]]}
+];
+var out="";
+P.forEach(function(p){
+  var keys=p.b.split(" + ").map(function(x){return '<span class="cap">'+x+'</span>'}).join('<span class="plus">+</span>');
+  var ks=p.k.map(function(k,i){
+    var free=!k[0];
+    return '<div class="k'+(free?' free':'')+'" style="--c:var(--c-'+p.c+')"><span class="kk">K'+(i+1)+'</span><div class="dial"></div><div class="kn">'+(free?'free':k[0])+'</div>'+(k[1]?'<small>'+k[1]+'</small>':'')+'</div>';
+  }).join("");
+  out+='<div class="card'+(p.h?' hid':'')+'"><div class="top"><span class="chip" style="background:var(--c-'+p.c+')"></span><span class="pname">'+p.n+'</span>'+(p.h?'<span class="tag">Hidden</span>':'')+'</div><div class="knobs">'+ks+'</div><div class="via">Open with '+keys+(p.s?' &middot; '+p.s:'')+'</div></div>';
+});
+document.getElementById("pages").innerHTML=out;
+</script>
