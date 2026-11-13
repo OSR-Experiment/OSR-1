@@ -1140,7 +1140,7 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                     }
                     bass = o * amp * E.blevel * 0.75f;
                 }
-                y = (sum * lvl * E.e * fade) * E.syn_g + bass * 0.2f;
+                y = (sum * lvl * E.e * fade) * E.syn_g;      /* the synth only: the bass and the drums skip the effects */
                 if (E.trem > 0.001f) {          /* phaser (the TREMOLO knob): depth and resonance */
                     float x = y + ph_fb * E.ph_last, a;
                     int k;
@@ -1291,8 +1291,8 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                         {
                             float dk = fm_minf(1.0f, E.duck * 1.1f), sh = dk * dk * (3.0f - 2.0f * dk);
                             float dg = 1.0f - 0.85f * E.side * sh;
-                            l = (l * dry + dlo + ol) * dg + kv + dh_l;
-                            r = (r * dry + dro + orr) * dg + kv + dh_r;
+                            l = (l * dry + dlo + ol + bass * 0.2f) * dg + kv + dh_l;
+                            r = (r * dry + dro + orr + bass * 0.2f) * dg + kv + dh_r;
                         }
                     }
                 }

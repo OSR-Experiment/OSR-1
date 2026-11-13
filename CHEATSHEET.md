@@ -16,8 +16,8 @@
 | --- | --- | --- | --- | --- | --- |
 | **HOME** | MAIN (synth) | Sound (same as PRESET) | Cutoff | Glide | Length (chord note length) |
 | **HOME + ENV** | GROOVE 2 | Strum (0 = all notes together) | free | free | free |
-| **FX** | FX | TAPE ECHO (synced, more = more repeats) | PHASER | JUNO (I → II → I+II) | CLOUD (hall, 3–10 s) |
-| **SCL** | CHORDS | Key | Voicing | Richness | **Scale** (GRID, MAJOR, MINOR, DORIAN, MIXOLYDIAN, HARM MINOR) |
+| **FX** (synth only) | FX | TAPE ECHO (synced, more = more repeats) | PHASER | JUNO (I → II → I+II) | CLOUD (hall, 3–10 s) |
+| **SCL** | CHORDS | Key | Voicing | Richness | **Scale** (GRID, MAJOR, MINOR, DORIAN, MIXOLYDIAN, HARM MINOR, LYDIAN, LOCRIAN) |
 | **ENV** | GROOVE | BPM | Swing | Density (0 = centre, as written; below 0 drops hits at random; above adds ghost hits; stops on 0, says "CENTRED") | Sidechain on/off |
 | **LFO** | BASS | Sound (21: HOOK BASS, PICKED, DARK PULSE and SUB, ROUND, ACID, REESE, PLUCK, FM, MOOG, FUNK, JUNO SUB, 808 SUB, HOUSE PLUCK, ACID SQUARE, ACID 24, DX BASS, FM TECHNO, REESE DEEP, WOBBLE) | Level | Riff (29 patterns, incl. 5 post-punk: POST PUNK, HOOK A, HOOK B, LEGATO 8THS, GOTH RUN; 16 by style: DISCO, HOUSE OFFBEAT, TECHNO ROLL, REGGAE, DUB, FUNK, SLAP, WALKING, ACID A/B, TRANCE, 808 TRAP, SYNTHWAVE, BOSSA, DNB) | Filter |
 | **GLO** | DRUMS | Pattern (40) | Kick | **Snare** | Hi-hat |

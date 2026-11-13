@@ -1,6 +1,6 @@
 # What changed since Blop 1.1.0
 
-## Later additions (v10 to v30)
+## Later additions (v10 to v33)
 
 Every control is in [CHEATSHEET.md](CHEATSHEET.md), a visual map is in [BLOP-MAP.html](BLOP-MAP.html), and the sounds, drums and
 bass with their sources are in [SOUNDS-AND-DRUMS.md](SOUNDS-AND-DRUMS.md).
@@ -9,6 +9,7 @@ bass with their sources are in [SOUNDS-AND-DRUMS.md](SOUNDS-AND-DRUMS.md).
   SEQ (looper: length up to 4 bars, transpose, order, sound), DRUMS (pattern, kick, snare, hi-hat), DRUMS 2 (HOME + GLO: rim, clap, tom,
   cowbell), GROOVE 2 (HOME + ENV: strum). MIDI channel moved to HOME + EDIT.
 - **Content:** 48 sounds (new ANALOG and DARK WAVE families), 21 bass sounds with 29 patterns, 40 drum patterns, 4 more drum voices.
+- **Scales:** LYDIAN and LOCRIAN added (8 in all). **Song shown:** the song loaded or stored last shows at the bottom of the screen. **Effects (echo, phaser, Juno, cloud) apply to the synth only;** the bass and drums stay dry.
 - **Looper** (REC / PLAY), 12 songs with on-screen banners, a scale selector, a CPU meter (HOME + OCT+).
 - **Fixes:** the short dip when changing chord with GLIDE off; DENSITY could not return to 0; saves from older builds are migrated.
 - Measured on a real FM-1: worst case with heavy pad, bass, drums and all effects at maximum is about 75% CPU, no dropouts.

@@ -64,7 +64,7 @@ static uint32_t cpu_peak;                 /* the audio load's peak since HOME + 
 #define SET_V1_SIZE __builtin_offsetof(settings_t, synth)   /* settings saved before the mixer: 40 bytes, loaded as they are */
 /* a player's own defaults (the first start, HOME + REC): my_setup.h beside app.c, if there is one (not in the
  * repository). It may define BLOP_DEFAULT_MIDIMAP (MAP_STANDARD, MAP_KEYSTEP, MAP_OFF), BLOP_DEFAULT_SCALE (0 GRID,
- * 1 MAJOR, 2 MINOR, 3 DORIAN, 4 MIXOLYDIAN, 5 HARM MINOR), BLOP_DEFAULT_KEY (0 C .. 11 B), BLOP_MIDI_OCTAVE (octaves
+ * 1 MAJOR, 2 MINOR, 3 DORIAN, 4 MIXOLYDIAN, 5 HARM MINOR, 6 LYDIAN, 7 LOCRIAN), BLOP_DEFAULT_KEY (0 C .. 11 B), BLOP_MIDI_OCTAVE (octaves
  * added to the notes from the MIDI jack, -2 .. 2: a keyboard whose chords sound too low or high) */
 #ifdef __has_include
 #if __has_include("my_setup.h")
@@ -119,8 +119,8 @@ static const char *const VOICING_NAME[3] = {"CLOSE", "OPEN", "WIDE"};
 /* SCALE (CHORDS page K4): GRID, Blop's grids; the others, the key pressed is the chord's root and the chord is the
  * one the scale gives on that degree of the song key (KEY). SCALE_Q: the chord on each semitone above KEY (the scale's
  * own seven, then borrowed ones on the other five); qualities as quality_ivs */
-#define NSCALE 6
-static const char *const SCALE_NAME[NSCALE] = {"GRID", "MAJOR", "MINOR", "DORIAN", "MIXOLYDIAN", "HARM MINOR"};
+#define NSCALE 8
+static const char *const SCALE_NAME[NSCALE] = {"GRID", "MAJOR", "MINOR", "DORIAN", "MIXOLYDIAN", "HARM MINOR", "LYDIAN", "LOCRIAN"};
 static const char SCALE_Q[NSCALE - 1][12] = {
     /*  1    b2   2    b3   3    4    #4   5    b6   6    b7   7 */
     {'M', 'M', 'm', 'M', 'm', 'M', 'd', 'V', 'M', 'm', 'M', 'd'},   /* major: I ii iii IV V vi vii */
@@ -128,6 +128,8 @@ static const char SCALE_Q[NSCALE - 1][12] = {
     {'m', 'M', 'm', 'M', 'M', 'M', 'd', 'm', 'M', 'd', 'M', 'd'},   /* dorian: i ii III IV v vi VII */
     {'M', 'M', 'm', 'M', 'd', 'M', 'd', 'm', 'M', 'm', 'M', 'd'},   /* mixolydian: I ii iii IV v vi VII */
     {'m', 'M', 'd', 'a', 'M', 'm', 'd', 'V', 'M', 'd', 'M', 'd'},   /* harmonic minor: i ii III+ iv V7 VI vii */
+    {'M', 'M', 'M', 'M', 'm', 'M', 'd', 'M', 'M', 'm', 'M', 'm'},   /* lydian: I II iii #iv(dim) V vi vii */
+    {'d', 'M', 'm', 'm', 'M', 'm', 'M', 'm', 'M', 'm', 'm', 'd'},   /* locrian: i(dim) II iii iv V VI vii */
 };
 static const uint8_t WHITE_IDX[8] = {0, 2, 4, 5, 7, 9, 11, 12}, BLACK_IDX[5] = {1, 3, 6, 8, 10};
 
@@ -727,6 +729,7 @@ void app_say(const char *a, const char *b)
     }
 }
 
+static int8_t cur_song = -1;              /* the song loaded or stored last (0..11), shown at the bottom; -1: none */
 static void dirty(void) { set_dirty = 1; dirty_at = plat_ms(); }
 
 static void wrap_u8(uint8_t *v, int32_t d, int n) { *v = (uint8_t)(((int32_t)*v + d % n + n) % n); }
@@ -1222,6 +1225,7 @@ static void slot_store(int i)
         char l[24], x[8];
         l[0] = 0; text_cat(l, "SONG "); text_cat(l, t);
         if (g->n) { int_text(g->n, x); text_cat(l, " + LOOP "); text_cat(l, x); }
+        cur_song = (int8_t)i;
         banner("SAVED", l, RGB(120, 230, 140), SLOT_KEY[i], 2200u);
         app_say("STORED IN SONG", t);
     } else {
@@ -1257,6 +1261,7 @@ static void slot_recall(int i)
     if (!set.rhythm && held_idx < 0 && active) stop();
     rechord();
     dirty();
+    cur_song = (int8_t)i;
     {
         char l[24];
         l[0] = 0; text_cat(l, "SONG "); text_cat(l, t);
@@ -1329,6 +1334,7 @@ static void input(void)
             ui.reset_done = 1;
             if (active) stop();
             settings_defaults();
+            cur_song = -1;
             set.page = page;
             ui.bowl = ui.dark = ui.clean = 0;
             eng_muffle(0.0f);
@@ -2276,6 +2282,11 @@ static void draw_bottom_text(void)       /* in the second canvas: y 0 = screen r
     char t[32];
     cv_rect(6, y0 + 1, tw, 13, pc);
     cv_text(11, y0 + 1, &FONT_T, PAGE_NAME[set.page], RGB(0, 0, 0));
+    if (cur_song >= 0) {                  /* the song loaded last, always on screen */
+        char sn[12];
+        sn[0] = 0; text_cat(sn, "SONG "); int_text(cur_song + 1, sn + 5);
+        cv_text(6 + tw + 8, y0 + 1, &FONT_T, sn, RGB(120, 230, 140));
+    }
     t[0] = 0;
     text_cat(t, set.rhythm ? RHYTHM_NAME[set.rhythm] : "RHYTHM OFF");
     if (set.drums) text_cat(t, " + DRUMS");
@@ -2368,6 +2379,7 @@ int app_expect(const char *what, int *got)
     else if (!strcmp(what, "dark")) *got = ui.dark;
     else if (!strcmp(what, "clean")) *got = ui.clean;
     else if (!strcmp(what, "cutoff")) *got = set.cutoff;
+    else if (!strcmp(what, "song")) *got = (uint32_t)(cur_song + 1);
     else if (!strcmp(what, "delay")) *got = set.delay;
     else if (!strcmp(what, "bsound")) *got = set.bsound;
     else if (!strcmp(what, "creature")) *got = set.creature;

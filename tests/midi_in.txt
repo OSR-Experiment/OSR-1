@@ -123,7 +123,7 @@ expect cutoff 100
 # CC 89 at 32: MAJOR
 midi TRS B0 7B 00
 wait 30
-midi TRS B0 59 20
+midi TRS B0 59 18
 wait 30
 expect root 1
 midi TRS 90 3E 64
@@ -293,7 +293,7 @@ expect active 0
 # SCALE in C: MAJOR's D is minor; MINOR's C is minor, its Eb major; HARM MINOR's G is major (V7)
 midi TRS B1 7B 00
 wait 30
-midi TRS B1 59 20
+midi TRS B1 59 18
 wait 30
 expect root 1
 midi TRS 91 3E 64
@@ -301,7 +301,7 @@ wait 30
 expect cminor 1
 midi TRS 81 3E 00
 wait 30
-midi TRS B1 59 30
+midi TRS B1 59 28
 wait 30
 expect root 2
 midi TRS 91 3C 64
@@ -314,7 +314,7 @@ wait 30
 expect cminor 0
 midi TRS 81 3F 00
 wait 30
-midi TRS B1 59 7F
+midi TRS B1 59 50
 wait 30
 expect root 5
 midi TRS 91 43 64
@@ -341,6 +341,16 @@ expect root 5
 midi TRS B1 59 00
 wait 30
 expect root 0
+# LYDIAN (CC 89 at 96) and LOCRIAN (at 127) are the 7th and 8th scales
+midi TRS B1 59 60
+wait 30
+expect root 6
+midi TRS B1 59 7F
+wait 30
+expect root 7
+midi TRS B1 59 00
+wait 30
+expect root 0
 # STRUM left the CHORDS page for SCALE: CC 118 still sets it
 midi TRS B1 76 7F
 wait 30
@@ -361,6 +371,8 @@ wait 30
 release SAVE
 wait 30
 expect slots 1
+# the song just stored (1) is the one shown at the bottom
+expect song 1
 expect bowl 0
 expect active 0
 turn PRESET 5
