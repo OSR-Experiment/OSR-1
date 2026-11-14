@@ -96,3 +96,5 @@ modifier et le redistribuer sous la même licence. Il peut donc reprendre du cod
 
 Les fichiers de fm1-base et felucca-bsp restent sous MPL-2.0 (compatible avec la GPL).
 Le paquet installable contient trois fichiers du SDK AC79 de JieLi (Apache-2.0).
+
+You can also try Blop in the browser, no flashing needed, in the free community [FM-1 Emulator](https://fm1-emulator.atst.tools/).
